@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN || github.token }}
 
       - name: Extract ZIP contents to root
         shell: bash
@@ -29,6 +27,7 @@ jobs:
 
           mkdir -p _temp_extract
           unzip -q "$ZIP_FILE" -d _temp_extract
+          rm -rf _temp_extract/N-GBA-StellarDragon/.github/workflows
 
           shopt -s dotglob nullglob
           cp -rf _temp_extract/N-GBA-StellarDragon/* .
