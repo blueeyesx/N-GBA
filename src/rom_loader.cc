@@ -1,5 +1,6 @@
 
 #include "rom_loader.h"
+#include "gba_memory.h"
 
 #include <e32base.h>
 #include <e32std.h>
@@ -39,6 +40,9 @@ namespace
 
 void NgbaReleaseRom()
 {
+    // Putuskan hubungan Memory Bus sebelum ROM dilepas.
+    NgbaMemoryShutdown();
+
     delete[] gRomData;
 
     gRomData = NULL;
@@ -143,6 +147,18 @@ TInt NgbaLoadRom(
     gRomSize = fileSize;
 
     gGameCode.Copy(buffer + 0xAC, 4);
+
+    // Hubungkan ROM ke GBA Memory Bus.
+    error = NgbaMemoryInit(
+        gRomData,
+        gRomSize
+    );
+
+    if (error != KErrNone)
+    {
+        NgbaReleaseRom();
+        return error;
+    }
 
     aRomSize = static_cast<TUint32>(gRomSize);
     aGameCode.Copy(gGameCode);
