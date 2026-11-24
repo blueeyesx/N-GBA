@@ -622,22 +622,22 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
-        if ((instruction & 0x0F000000u) == 0x0F000000u)
-        {
-            const TUint32 swiNumber =
-                instruction & 0x00FFFFFFu;
+if ((instruction & 0x0F000000u) == 0x0F000000u)
+{
+    const TUint32 swiNumber =
+        (instruction >> 16) & 0xFFu;
 
-            if (swiNumber == 0x01u)
-                return ExecuteBiosRegisterRamReset(cpu);
+    if (swiNumber == 0x01u)
+        return ExecuteBiosRegisterRamReset(cpu);
 
-            if (swiNumber == 0x0Bu)
-                return ExecuteBiosCpuSet(cpu);
+    if (swiNumber == 0x0Bu)
+        return ExecuteBiosCpuSet(cpu);
 
-            if (swiNumber == 0x0Cu)
-                return ExecuteBiosCpuFastSet(cpu);
+    if (swiNumber == 0x0Cu)
+        return ExecuteBiosCpuFastSet(cpu);
 
-            return ENgbaCpuUnsupported;
-        }
+    return ENgbaCpuUnsupported;
+}
 
         // Multiply / Multiply Accumulate.
         if ((instruction & 0x0FC000F0u) == 0x00000090u)
