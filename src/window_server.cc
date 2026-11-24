@@ -374,7 +374,6 @@ void DrawMenu(
             (i == selected) ? KWhite : KMuted
         );
 
-        // Tanda mode bahasa aktif
         if (
             page == ELanguagePage &&
             i == languageMode
@@ -398,6 +397,162 @@ void DrawMenu(
     );
 
     gc.DiscardFont();
+}
+
+// --------------------------------------------------
+// Aktivasi menu
+// --------------------------------------------------
+
+void ActivateSelected(
+    TInt& page,
+    TInt& selected,
+    TInt& languageMode,
+    TBool& indonesian,
+    TBool& running,
+    const char*& message
+)
+{
+    if (page == EMainPage) {
+
+        switch (selected) {
+
+            case 0:
+                message =
+                    indonesian
+                    ? "PUSTAKA GAME DIPILIH"
+                    : "GAME LIBRARY SELECTED";
+                break;
+
+            case 1:
+                message =
+                    indonesian
+                    ? "MUAT ROM DIPILIH"
+                    : "LOAD ROM SELECTED";
+                break;
+
+            case 2:
+                message =
+                    indonesian
+                    ? "BELUM ADA GAME"
+                    : "NO SAVED GAME YET";
+                break;
+
+            case 3:
+                message =
+                    indonesian
+                    ? "SAVE STATE DIPILIH"
+                    : "SAVE STATES SELECTED";
+                break;
+
+            case 4:
+                page = ESettingsPage;
+                selected = 0;
+
+                message =
+                    indonesian
+                    ? "PENGATURAN"
+                    : "SETTINGS";
+                break;
+
+            case 5:
+                message =
+                    indonesian
+                    ? "EMULATOR GBA N-GBA"
+                    : "N-GBA GBA EMULATOR";
+                break;
+
+            case 6:
+                running = EFalse;
+                break;
+        }
+
+    } else if (page == ESettingsPage) {
+
+        if (selected == 0) {
+
+            page = ELanguagePage;
+            selected = 0;
+
+            message =
+                indonesian
+                ? "PILIH BAHASA"
+                : "SELECT LANGUAGE";
+
+        } else {
+
+            page = EMainPage;
+            selected = 4;
+
+            message =
+                indonesian
+                ? "PENGATURAN"
+                : "SETTINGS";
+        }
+
+    } else if (page == ELanguagePage) {
+
+        if (selected <= 2) {
+
+            languageMode = selected;
+
+            const TInt saveError =
+                SaveLanguageMode(languageMode);
+
+            indonesian =
+                IsIndonesian(languageMode);
+
+            page = ESettingsPage;
+            selected = 0;
+
+            if (saveError == KErrNone) {
+                message =
+                    indonesian
+                    ? "BAHASA TERSIMPAN"
+                    : "LANGUAGE SAVED";
+            } else {
+                message =
+                    indonesian
+                    ? "GAGAL SIMPAN BAHASA"
+                    : "LANGUAGE SAVE FAILED";
+            }
+
+        } else {
+
+            page = ESettingsPage;
+            selected = 0;
+
+            message =
+                indonesian
+                ? "PENGATURAN"
+                : "SETTINGS";
+        }
+    }
+}
+
+// --------------------------------------------------
+// Kembali
+// --------------------------------------------------
+
+void GoBack(
+    TInt& page,
+    TInt& selected,
+    TBool& running
+)
+{
+    if (page == EMainPage) {
+
+        running = EFalse;
+
+    } else if (page == ELanguagePage) {
+
+        page = ESettingsPage;
+        selected = 0;
+
+    } else {
+
+        page = EMainPage;
+        selected = 4;
+    }
 }
 
 // --------------------------------------------------
@@ -468,6 +623,9 @@ TInt RunWindowServer()
                             TInt page = EMainPage;
                             TInt selected = 0;
 
+                            // Baris terakhir yang disentuh
+                            TInt lastTappedRow = -1;
+
                             TBool running = ETrue;
 
                             const char* message =
@@ -499,7 +657,7 @@ TInt RunWindowServer()
                                 User::WaitForAnyRequest();
 
                                 // --------------------------
-                                // Keyboard
+                                // Input keyboard dan sentuhan
                                 // --------------------------
 
                                 if (events != KRequestPending) {
@@ -515,12 +673,80 @@ TInt RunWindowServer()
 
                                     if (
                                         event.Type() == EEventKey ||
-                                        event.Type() == EEventKeyDown
+                                        event.Type() == EEventKeyDown ||
+                                        event.Type() == EEventPointer
                                     ) {
 
-                                        const TUint key =
-                                            event.Key()->iCode;
+                                        TUint key = 0;
 
+                                        // TOUCHSCREEN
+                                        if (
+                                            event.Type() ==
+                                            EEventPointer
+                                        ) {
+
+                                            const TPointerEvent* pointer =
+                                                event.Pointer();
+
+                                            if (
+                                                pointer != NULL &&
+                                                pointer->iType ==
+                                                TPointerEvent::EButton1Down
+                                            ) {
+
+                                                const TInt rowHeight =
+                                                    size.iHeight >= 300
+                                                    ? 27 : 22;
+
+                                                const TInt y =
+                                                    pointer->iPosition.iY;
+
+                                                if (y >= KMenuTop) {
+
+                                                    const TInt row =
+                                                        (y - KMenuTop) /
+                                                        rowHeight;
+
+                                                    if (
+                                                        row >= 0 &&
+                                                        row < MenuCount(page)
+                                                    ) {
+
+                                                        if (
+                                                            row ==
+                                                            lastTappedRow
+                                                        ) {
+
+                                                            // Ketukan kedua
+                                                            key = EKeyEnter;
+                                                            lastTappedRow = -1;
+
+                                                        } else {
+
+                                                            // Ketukan pertama
+                                                            selected = row;
+                                                            lastTappedRow = row;
+
+                                                            window.Invalidate();
+                                                        }
+
+                                                    } else {
+                                                        lastTappedRow = -1;
+                                                    }
+
+                                                } else {
+                                                    lastTappedRow = -1;
+                                                }
+                                            }
+
+                                        } else {
+
+                                            // TOMBOL FISIK
+                                            key = event.Key()->iCode;
+                                            lastTappedRow = -1;
+                                        }
+
+                                        // NAVIGASI ATAS
                                         if (key == EKeyUpArrow) {
 
                                             selected =
@@ -530,6 +756,7 @@ TInt RunWindowServer()
 
                                             window.Invalidate();
 
+                                        // NAVIGASI BAWAH
                                         } else if (
                                             key == EKeyDownArrow
                                         ) {
@@ -540,160 +767,34 @@ TInt RunWindowServer()
 
                                             window.Invalidate();
 
+                                        // PILIH MENU
                                         } else if (
                                             key == EKeyEnter ||
                                             key == EKeyDevice3
                                         ) {
 
-                                            if (page == EMainPage) {
-
-                                                switch (selected) {
-
-                                                    case 0:
-                                                        message =
-                                                            indonesian
-                                                            ? "PUSTAKA GAME DIPILIH"
-                                                            : "GAME LIBRARY SELECTED";
-                                                        break;
-
-                                                    case 1:
-                                                        message =
-                                                            indonesian
-                                                            ? "MUAT ROM DIPILIH"
-                                                            : "LOAD ROM SELECTED";
-                                                        break;
-
-                                                    case 2:
-                                                        message =
-                                                            indonesian
-                                                            ? "BELUM ADA GAME"
-                                                            : "NO SAVED GAME YET";
-                                                        break;
-
-                                                    case 3:
-                                                        message =
-                                                            indonesian
-                                                            ? "SAVE STATE DIPILIH"
-                                                            : "SAVE STATES SELECTED";
-                                                        break;
-
-                                                    case 4:
-                                                        page = ESettingsPage;
-                                                        selected = 0;
-
-                                                        message =
-                                                            indonesian
-                                                            ? "PENGATURAN"
-                                                            : "SETTINGS";
-                                                        break;
-
-                                                    case 5:
-                                                        message =
-                                                            indonesian
-                                                            ? "EMULATOR GBA N-GBA"
-                                                            : "N-GBA GBA EMULATOR";
-                                                        break;
-
-                                                    case 6:
-                                                        running = EFalse;
-                                                        break;
-                                                }
-
-                                            } else if (
-                                                page == ESettingsPage
-                                            ) {
-
-                                                if (selected == 0) {
-
-                                                    page = ELanguagePage;
-                                                    selected = 0;
-
-                                                    message =
-                                                        indonesian
-                                                        ? "PILIH BAHASA"
-                                                        : "SELECT LANGUAGE";
-
-                                                } else {
-
-                                                    page = EMainPage;
-                                                    selected = 4;
-
-                                                    message =
-                                                        indonesian
-                                                        ? "PENGATURAN"
-                                                        : "SETTINGS";
-                                                }
-
-                                            } else if (
-                                                page == ELanguagePage
-                                            ) {
-
-                                                if (selected <= 2) {
-
-                                                    languageMode = selected;
-
-                                                    const TInt saveError =
-                                                        SaveLanguageMode(
-                                                            languageMode
-                                                        );
-
-                                                    indonesian =
-                                                        IsIndonesian(
-                                                            languageMode
-                                                        );
-
-                                                    page = ESettingsPage;
-                                                    selected = 0;
-
-                                                    if (
-                                                        saveError == KErrNone
-                                                    ) {
-                                                        message =
-                                                            indonesian
-                                                            ? "BAHASA TERSIMPAN"
-                                                            : "LANGUAGE SAVED";
-                                                    } else {
-                                                        message =
-                                                            indonesian
-                                                            ? "GAGAL SIMPAN BAHASA"
-                                                            : "LANGUAGE SAVE FAILED";
-                                                    }
-
-                                                } else {
-
-                                                    page = ESettingsPage;
-                                                    selected = 0;
-
-                                                    message =
-                                                        indonesian
-                                                        ? "PENGATURAN"
-                                                        : "SETTINGS";
-                                                }
-                                            }
+                                            ActivateSelected(
+                                                page,
+                                                selected,
+                                                languageMode,
+                                                indonesian,
+                                                running,
+                                                message
+                                            );
 
                                             window.Invalidate();
 
+                                        // KEMBALI
                                         } else if (
                                             key == EKeyBackspace ||
                                             key == EKeyEscape
                                         ) {
 
-                                            if (page == EMainPage) {
-
-                                                running = EFalse;
-
-                                            } else if (
-                                                page == ELanguagePage
-                                            ) {
-
-                                                page = ESettingsPage;
-                                                selected = 0;
-
-                                            } else {
-
-                                                page = EMainPage;
-                                                selected = 4;
-                                            }
+                                            GoBack(
+                                                page,
+                                                selected,
+                                                running
+                                            );
 
                                             window.Invalidate();
                                         }
