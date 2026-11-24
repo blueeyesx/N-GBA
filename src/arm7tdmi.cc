@@ -1,3 +1,4 @@
+
 #include "arm7tdmi.h"
 #include "gba_memory.h"
 
@@ -260,6 +261,82 @@ namespace
         return ShiftValue(value, type, amount, carry);
     }
 
+    // BIOS HLE SWI 0Bh: CpuSet.
+    //
+    // R0 = source address
+    // R1 = destination address
+    // R2 = control
+    //
+    // Bit 24: 0 = 16-bit, 1 = 32-bit
+    // Bit 26: 0 = copy, 1 = fixed-source fill
+    // Bits 0-20: number of transfer units
+
+    TInt ExecuteBiosCpuSet(TNgbaCpuState& cpu)
+    {
+        const TUint32 source = cpu.r[0];
+        const TUint32 destination = cpu.r[1];
+        const TUint32 control = cpu.r[2];
+
+        const TBool wordMode =
+            (control & (1u << 24)) != 0;
+
+        const TBool fixedSource =
+            (control & (1u << 26)) != 0;
+
+        const TUint32 count =
+            control & 0x001FFFFFu;
+
+        if (count == 0)
+            return ENgbaCpuOk;
+
+        if (wordMode)
+        {
+            TUint32 src = source & ~3u;
+            TUint32 dst = destination & ~3u;
+            TUint32 value = 0;
+
+            if (fixedSource)
+                value = NgbaMemoryRead32(src);
+
+            for (TUint32 i = 0; i < count; ++i)
+            {
+                if (!fixedSource)
+                    value = NgbaMemoryRead32(src);
+
+                NgbaMemoryWrite32(dst, value);
+
+                if (!fixedSource)
+                    src += 4;
+
+                dst += 4;
+            }
+        }
+        else
+        {
+            TUint32 src = source & ~1u;
+            TUint32 dst = destination & ~1u;
+            TUint16 value = 0;
+
+            if (fixedSource)
+                value = NgbaMemoryRead16(src);
+
+            for (TUint32 i = 0; i < count; ++i)
+            {
+                if (!fixedSource)
+                    value = NgbaMemoryRead16(src);
+
+                NgbaMemoryWrite16(dst, value);
+
+                if (!fixedSource)
+                    src += 2;
+
+                dst += 2;
+            }
+        }
+
+        return ENgbaCpuOk;
+    }
+
     TInt ExecuteMultiply(
         TNgbaCpuState& cpu,
         TUint32 instruction
@@ -489,6 +566,9 @@ namespace
                 return ENgbaCpuOk;
             }
 
+            if (swiNumber == 0x0Bu)
+                return ExecuteBiosCpuSet(cpu);
+
             return ENgbaCpuUnsupported;
         }
 
@@ -706,7 +786,6 @@ namespace
     )
     {
         // LSL / LSR / ASR immediate.
-        // Perbaikan: jangan menangkap kelompok ADD / SUB.
         if ((instruction & 0xE000u) == 0x0000u &&
             (instruction & 0x1800u) != 0x1800u)
         {
@@ -1193,6 +1272,9 @@ namespace
                 return ENgbaCpuOk;
             }
 
+            if (swiNumber == 0x0Bu)
+                return ExecuteBiosCpuSet(cpu);
+
             return ENgbaCpuUnsupported;
         }
 
@@ -1310,9 +1392,7 @@ namespace
     }
 }
 
-// ---------------------------------------------------------
 // CPU RESET
-// ---------------------------------------------------------
 
 void NgbaCpuReset(TNgbaCpuState& cpu)
 {
@@ -1332,9 +1412,7 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     cpu.lastInstructionSize = 0;
 }
 
-// ---------------------------------------------------------
 // CPU STEP
-// ---------------------------------------------------------
 
 TInt NgbaCpuStep(TNgbaCpuState& cpu)
 {
@@ -1390,9 +1468,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     return result;
 }
 
-// ---------------------------------------------------------
 // REGISTER ACCESS
-// ---------------------------------------------------------
 
 TUint32 NgbaCpuGetRegister(
     const TNgbaCpuState& cpu,
