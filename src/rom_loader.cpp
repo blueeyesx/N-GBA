@@ -44,11 +44,7 @@ namespace
 
 void NgbaReleaseRom()
 {
-    // Simpan data SRAM / EEPROM / Flash sebelum
-    // Memory Bus dilepaskan.
     NgbaMemoryShutdown();
-
-    // Reset konfigurasi game aktif.
     NgbaGameConfigReset();
 
     gRomSize = 0;
@@ -68,8 +64,11 @@ TInt NgbaLoadRom(
     aRomSize = 0;
     aGameCode.Zero();
 
-    // Lepaskan ROM sebelumnya.
     NgbaReleaseRom();
+
+    // -----------------------------------------------------
+    // STAGE 1: Connect File Server
+    // -----------------------------------------------------
 
     RFs fs;
 
@@ -77,6 +76,10 @@ TInt NgbaLoadRom(
 
     if (error != KErrNone)
         return error;
+
+    // -----------------------------------------------------
+    // STAGE 2: Open ROM
+    // -----------------------------------------------------
 
     RFile file;
 
@@ -93,7 +96,7 @@ TInt NgbaLoadRom(
     }
 
     // -----------------------------------------------------
-    // Periksa ukuran ROM
+    // STAGE 3: Check ROM size
     // -----------------------------------------------------
 
     TInt fileSize = 0;
@@ -116,7 +119,7 @@ TInt NgbaLoadRom(
     }
 
     // -----------------------------------------------------
-    // Baca header GBA sebanyak 192 byte
+    // STAGE 4: Read ROM header
     // -----------------------------------------------------
 
     TUint8 header[KMinimumRomSize];
@@ -143,19 +146,17 @@ TInt NgbaLoadRom(
         return KErrEof;
 
     // -----------------------------------------------------
-    // Validasi Nintendo GBA header
+    // STAGE 5: Validate GBA header
     // -----------------------------------------------------
 
-    // Nintendo logo check byte.
     if (header[0xB2] != 0x96)
         return KErrCorrupt;
 
-    // Game Code berada pada offset 0xAC.
     if (!IsValidGameCode(header + 0xAC))
         return KErrCorrupt;
 
     // -----------------------------------------------------
-    // Simpan identitas ROM
+    // STAGE 6: Store ROM information
     // -----------------------------------------------------
 
     gRomSize = fileSize;
@@ -166,33 +167,20 @@ TInt NgbaLoadRom(
     );
 
     // -----------------------------------------------------
-    // Muat database kompatibilitas game
+    // STAGE 7: Load game configuration
     // -----------------------------------------------------
-
-    // Database:
-    // C:\Data\N-GBA\game_config.txt
-    //
-    // Konfigurasi harus dimuat sebelum Memory Bus
-    // diinisialisasi agar tipe Save dapat diterapkan.
 
     error = NgbaGameConfigLoad(gGameCode);
 
     if (error != KErrNone)
     {
-        gRomSize = 0;
-        gGameCode.Zero();
-
-        NgbaGameConfigReset();
-
+        NgbaReleaseRom();
         return error;
     }
 
     // -----------------------------------------------------
-    // Inisialisasi ROM file-backed
+    // STAGE 8: Initialize file-backed ROM memory
     // -----------------------------------------------------
-
-    // ROM dibaca langsung dari file menggunakan cache
-    // sehingga tidak perlu menyalin seluruh ROM ke RAM.
 
     error = NgbaMemoryInitFile(
         aPath,
@@ -206,7 +194,7 @@ TInt NgbaLoadRom(
     }
 
     // -----------------------------------------------------
-    // CPU self-test
+    // STAGE 9: CPU self-test
     // -----------------------------------------------------
 
     error = NgbaCpuRunSelfTests(
@@ -221,11 +209,10 @@ TInt NgbaLoadRom(
     }
 
     // -----------------------------------------------------
-    // Kembalikan informasi ROM ke pemanggil
+    // STAGE 10: Return success
     // -----------------------------------------------------
 
     aRomSize = static_cast<TUint32>(gRomSize);
-
     aGameCode.Copy(gGameCode);
 
     return KErrNone;
@@ -237,9 +224,6 @@ TInt NgbaLoadRom(
 
 const TUint8* NgbaRomData()
 {
-    // ROM menggunakan sistem file-backed.
-    // Tidak ada salinan ROM penuh di RAM.
-
     return NULL;
 }
 
