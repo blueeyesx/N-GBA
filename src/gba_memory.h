@@ -4,13 +4,19 @@
 
 #include <e32std.h>
 
-// Menghubungkan ROM yang sudah dimuat ke Memory Bus.
+// Mode ROM dari pointer (dipakai untuk pengujian CPU).
 TInt NgbaMemoryInit(
     const TUint8* aRom,
     TInt aRomSize
 );
 
-// Menghapus dan melepaskan hubungan Memory Bus.
+// Mode ROM langsung dari file dengan cache kecil.
+TInt NgbaMemoryInitFile(
+    const TDesC& aPath,
+    TInt aRomSize
+);
+
+// Menghapus dan menutup hubungan Memory Bus.
 void NgbaMemoryShutdown();
 
 // Membaca memori.
@@ -19,22 +25,11 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress);
 TUint32 NgbaMemoryRead32(TUint32 aAddress);
 
 // Menulis memori.
-void NgbaMemoryWrite8(
-    TUint32 aAddress,
-    TUint8 aValue
-);
+void NgbaMemoryWrite8(TUint32 aAddress, TUint8 aValue);
+void NgbaMemoryWrite16(TUint32 aAddress, TUint16 aValue);
+void NgbaMemoryWrite32(TUint32 aAddress, TUint32 aValue);
 
-void NgbaMemoryWrite16(
-    TUint32 aAddress,
-    TUint16 aValue
-);
-
-void NgbaMemoryWrite32(
-    TUint32 aAddress,
-    TUint32 aValue
-);
-
-// Memeriksa apakah Memory Bus sudah aktif.
+// Memeriksa apakah Memory Bus aktif.
 TBool NgbaMemoryReady();
 
 #endif
