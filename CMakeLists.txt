@@ -9,6 +9,7 @@ symbian_add_executable(
     ngba_native_gui
     src/app.cc
     src/window_server.cc
+    src/rom_browser.cc
 )
 
 target_link_libraries(
@@ -17,4 +18,5 @@ target_link_libraries(
     Symbian::Stackless
     Symbian::WindowServer
     Symbian::Gdi
+    Symbian::FileServer
 )
