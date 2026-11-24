@@ -2,6 +2,7 @@
 #include "window_server.h"
 #include "rom_loader.h"
 #include "arm7tdmi.h"
+#include "gba_memory.h"
 
 #include <e32base.h>
 #include <e32std.h>
@@ -63,7 +64,6 @@ _LIT(KRomFolder, "E:\\GBA\\");
 void LogMessage(const TDesC& message)
 {
     RFs fs;
-
     TInt error = fs.Connect();
 
     if (error != KErrNone) {
@@ -95,12 +95,10 @@ void LogMessage(const TDesC& message)
 
     if (error == KErrNone) {
         TInt position = 0;
-
         error = file.Seek(ESeekEnd, position);
 
         if (error == KErrNone) {
             TBuf8<512> line;
-
             line.Append(_L8("N-GBA | "));
 
             for (
@@ -118,7 +116,6 @@ void LogMessage(const TDesC& message)
             }
 
             line.Append(_L8("\r\n"));
-
             file.Write(line);
         }
 
@@ -135,12 +132,12 @@ void LogCpuDiagnostic(const char* diagnostic)
     }
 
     TBuf<256> message;
-
     message.Copy(_L("CPU DIAGNOSTIC: "));
 
     for (
         TInt i = 0;
-        diagnostic[i] != '\0' && message.Length() < message.MaxLength();
+        diagnostic[i] != '\0' &&
+        message.Length() < message.MaxLength();
         ++i
     ) {
         message.Append(
@@ -182,7 +179,6 @@ void ClearLogFile()
     fs.Close();
 }
 
-// Membaca bagian akhir log agar halaman tetap ringan.
 void ReadLogFile(TBuf<512>& output)
 {
     output.Zero();
@@ -209,7 +205,6 @@ void ReadLogFile(TBuf<512>& output)
     }
 
     TInt fileSize = 0;
-
     error = file.Size(fileSize);
 
     if (error == KErrNone && fileSize > 0) {
@@ -217,12 +212,10 @@ void ReadLogFile(TBuf<512>& output)
             fileSize > 480 ? 480 : fileSize;
 
         TInt position = fileSize - readSize;
-
         error = file.Seek(ESeekStart, position);
 
         if (error == KErrNone) {
             TBuf8<480> data;
-
             error = file.Read(data, readSize);
 
             if (error == KErrNone) {
@@ -506,13 +499,22 @@ void FormatHex8(TUint32 value, char* output)
     output[8] = '\0';
 }
 
+void FormatHex2(TUint8 value, char* output)
+{
+    const char* digits = "0123456789ABCDEF";
+
+    output[0] = digits[(value >> 4) & 0x0F];
+    output[1] = digits[value & 0x0F];
+    output[2] = '\0';
+}
+
 void AppendDiagnosticText(
     char* output,
     TInt& position,
     const char* text
 )
 {
-    while (*text != '\0') {
+    while (*text != '\0' && position < 250) {
         output[position++] = *text++;
     }
 }
@@ -526,13 +528,30 @@ void AppendDiagnosticHex(
     char hex[9];
     FormatHex8(value, hex);
 
-    for (TInt i = 0; i < 8; ++i) {
+    for (TInt i = 0; i < 8 && position < 250; ++i) {
+        output[position++] = hex[i];
+    }
+}
+
+void AppendDiagnosticByte(
+    char* output,
+    TInt& position,
+    TUint8 value
+)
+{
+    char hex[3];
+    FormatHex2(value, hex);
+
+    for (TInt i = 0; i < 2 && position < 250; ++i) {
         output[position++] = hex[i];
     }
 }
 
 void FormatCpuDiagnostic(
     const TNgbaCpuState& cpu,
+    TUint32 previousAddress,
+    TUint32 previousOpcode,
+    TBool hasPreviousInstruction,
     char* output
 )
 {
@@ -547,9 +566,75 @@ void FormatCpuDiagnostic(
     AppendDiagnosticText(
         output,
         position,
-        cpu.lastInstructionSize == 2 ? " THUMB\n" : " ARM\n"
+        cpu.lastInstructionSize == 2 ? " THUMB" : " ARM"
     );
 
+    AppendDiagnosticText(
+        output,
+        position,
+        (cpu.cpsr & 0x20u) ? " T:1\n" : " T:0\n"
+    );
+
+    // Byte ROM pada alamat instruksi.
+    AppendDiagnosticText(output, position, "BYTE:");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 1)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 2)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 3)
+    );
+
+    output[position++] = '\n';
+
+    // Instruksi sebelumnya.
+    AppendDiagnosticText(output, position, "PREV:");
+
+    if (hasPreviousInstruction) {
+        AppendDiagnosticHex(
+            output,
+            position,
+            previousAddress
+        );
+
+        AppendDiagnosticText(output, position, " OP:");
+
+        AppendDiagnosticHex(
+            output,
+            position,
+            previousOpcode
+        );
+    }
+    else {
+        AppendDiagnosticText(output, position, "NONE");
+    }
+
+    output[position++] = '\n';
+
+    // Register.
     AppendDiagnosticText(output, position, "R0:");
     AppendDiagnosticHex(output, position, cpu.r[0]);
 
@@ -566,6 +651,7 @@ void FormatCpuDiagnostic(
 
     output[position++] = '\n';
 
+    // CPSR.
     AppendDiagnosticText(output, position, "CPSR:");
     AppendDiagnosticHex(output, position, cpu.cpsr);
 
@@ -805,9 +891,13 @@ void DrawCpuDiagnostic(
     TInt lineLength = 0;
     TInt lineNumber = 0;
 
-    const TInt lineHeight = 16;
+    const TInt lineHeight = 15;
+    const TInt maxLines = 7;
 
-    while (*diagnostic != '\0' && lineNumber < 4) {
+    while (
+        *diagnostic != '\0' &&
+        lineNumber < maxLines
+    ) {
         if (*diagnostic == '\n') {
             line[lineLength] = '\0';
 
@@ -829,7 +919,7 @@ void DrawCpuDiagnostic(
         ++diagnostic;
     }
 
-    if (lineLength > 0 && lineNumber < 4) {
+    if (lineLength > 0 && lineNumber < maxLines) {
         line[lineLength] = '\0';
 
         DrawText(
@@ -858,7 +948,6 @@ void DrawLogPage(
     Fill(gc, 0, 0, size.iWidth, 4, KBlue);
 
     DrawText(gc, "N-GBA / LOG", 12, 30, KWhite);
-
     DrawText(
         gc,
         "C:\\Data\\N-GBA\\ngba.log",
@@ -906,13 +995,7 @@ void DrawLogPage(
     TInt y = 79;
 
     if (lineCount == 0) {
-        DrawText(
-            gc,
-            "LOG KOSONG",
-            12,
-            y,
-            KMuted
-        );
+        DrawText(gc, "LOG KOSONG", 12, y, KMuted);
     }
     else {
         for (TInt i = 0; i < lineCount; ++i) {
@@ -924,9 +1007,7 @@ void DrawLogPage(
                 length = line.MaxLength();
             }
 
-            line.Copy(
-                logText.Mid(starts[i], length)
-            );
+            line.Copy(logText.Mid(starts[i], length));
 
             DrawRomText(
                 gc,
@@ -1074,7 +1155,7 @@ void DrawMenu(
             gc,
             diagnostic,
             8,
-            size.iHeight - 78
+            size.iHeight - 112
         );
     }
 
@@ -1108,7 +1189,11 @@ void ActivateSelected(
     RTimer& cpuTimer,
     TRequestStatus& cpuTimerStatus,
     TBool& cpuTimerPending,
-    TBool timerReady
+    TBool timerReady,
+    char* diagnostic,
+    TUint32& previousAddress,
+    TUint32& previousOpcode,
+    TBool& hasPreviousInstruction
 )
 {
     if (page == EMainPage) {
@@ -1278,6 +1363,14 @@ void ActivateSelected(
             if (loadError == KErrNone) {
                 NgbaCpuReset(cpu);
 
+                previousAddress = 0;
+                previousOpcode = 0;
+                hasPreviousInstruction = EFalse;
+
+                if (diagnostic != NULL) {
+                    diagnostic[0] = '\0';
+                }
+
                 TBuf<128> successEntry;
                 successEntry.Copy(_L("ROM LOADED: "));
                 successEntry.Append(romNames[selected]);
@@ -1310,7 +1403,6 @@ void ActivateSelected(
             else {
                 TBuf<64> errorEntry;
                 errorEntry.Copy(_L("ROM LOAD FAILED, ERROR: "));
-
                 errorEntry.AppendNum(loadError);
                 LogMessage(errorEntry);
 
@@ -1446,8 +1538,13 @@ TInt RunWindowServer()
                                     ? "ATAS BAWAH PILIH KEMBALI"
                                     : "UP DOWN SELECT BACK";
 
-                                char diagnostic[192];
+                                char diagnostic[256];
                                 diagnostic[0] = '\0';
+
+                                TUint32 previousAddress = 0;
+                                TUint32 previousOpcode = 0;
+
+                                TBool hasPreviousInstruction = EFalse;
 
                                 TNgbaCpuState cpu;
                                 NgbaCpuReset(cpu);
@@ -1626,7 +1723,11 @@ TInt RunWindowServer()
                                                     cpuTimer,
                                                     cpuTimerStatus,
                                                     cpuTimerPending,
-                                                    timerReady
+                                                    timerReady,
+                                                    diagnostic,
+                                                    previousAddress,
+                                                    previousOpcode,
+                                                    hasPreviousInstruction
                                                 );
 
                                                 if (
@@ -1758,6 +1859,13 @@ TInt RunWindowServer()
                                                 i < KCpuInstructionsPerTick;
                                                 ++i
                                             ) {
+                                                previousAddress = cpu.lastAddress;
+                                                previousOpcode = cpu.lastOpcode;
+
+                                                hasPreviousInstruction =
+                                                    cpu.lastInstructionSize == 2 ||
+                                                    cpu.lastInstructionSize == 4;
+
                                                 stepResult = NgbaCpuStep(cpu);
 
                                                 if (stepResult != ENgbaCpuOk) {
@@ -1771,6 +1879,9 @@ TInt RunWindowServer()
                                                 if (stepResult == ENgbaCpuUnsupported) {
                                                     FormatCpuDiagnostic(
                                                         cpu,
+                                                        previousAddress,
+                                                        previousOpcode,
+                                                        hasPreviousInstruction,
                                                         diagnostic
                                                     );
 
@@ -1796,6 +1907,9 @@ TInt RunWindowServer()
 
                                                     FormatCpuDiagnostic(
                                                         cpu,
+                                                        previousAddress,
+                                                        previousOpcode,
+                                                        hasPreviousInstruction,
                                                         diagnostic
                                                     );
 
