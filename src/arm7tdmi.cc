@@ -11,7 +11,10 @@ namespace
 
     const TUint32 KRomBase = 0x08000000u;
 
-    TBool ConditionPassed(TUint32 cpsr, TUint32 condition)
+    TBool ConditionPassed(
+        TUint32 cpsr,
+        TUint32 condition
+    )
     {
         const TBool n = (cpsr & KFlagN) != 0;
         const TBool z = (cpsr & KFlagZ) != 0;
@@ -46,23 +49,29 @@ namespace
     )
     {
         if (index == 15)
-            return instructionAddress + 8;
+            return instructionAddress + (cpu.thumb ? 4 : 8);
 
         return cpu.r[index & 15];
     }
 
-    void SetNzFlags(TNgbaCpuState& cpu, TUint32 value)
+    void SetNzFlags(
+        TNgbaCpuState& cpu,
+        TUint32 value
+    )
     {
         cpu.cpsr &= ~(KFlagN | KFlagZ);
 
-        if ((value & 0x80000000u) != 0)
+        if (value & 0x80000000u)
             cpu.cpsr |= KFlagN;
 
         if (value == 0)
             cpu.cpsr |= KFlagZ;
     }
 
-    TUint32 RotateRight(TUint32 value, TInt amount)
+    TUint32 RotateRight(
+        TUint32 value,
+        TInt amount
+    )
     {
         amount &= 31;
 
@@ -73,57 +82,88 @@ namespace
                (value << (32 - amount));
     }
 
+    TUint32 ShiftValue(
+        TUint32 value,
+        TInt type,
+        TInt amount,
+        TBool& carry
+    )
+    {
+        if (amount == 0)
+            return value;
+
+        switch (type)
+        {
+        case 0:
+            carry = ((value >> (32 - amount)) & 1u) != 0;
+            return value << amount;
+
+        case 1:
+            carry = ((value >> (amount - 1)) & 1u) != 0;
+            return value >> amount;
+
+        case 2:
+            carry = ((value >> (amount - 1)) & 1u) != 0;
+
+            if (value & 0x80000000u)
+                return (value >> amount) |
+                       (~0u << (32 - amount));
+
+            return value >> amount;
+
+        case 3:
+            carry = ((value >> (amount - 1)) & 1u) != 0;
+            return RotateRight(value, amount);
+        }
+
+        return value;
+    }
+
     TUint32 DecodeOperand2(
         const TNgbaCpuState& cpu,
         TUint32 instruction,
-        TUint32 instructionAddress
+        TUint32 instructionAddress,
+        TBool& carry
     )
     {
-        if ((instruction & (1u << 25)) != 0)
+        carry = (cpu.cpsr & KFlagC) != 0;
+
+        if (instruction & (1u << 25))
         {
             const TInt rotate =
-                static_cast<TInt>((instruction >> 8) & 15) * 2;
+                static_cast<TInt>(
+                    (instruction >> 8) & 15
+                ) * 2;
 
-            return RotateRight(instruction & 0xFFu, rotate);
+            return RotateRight(
+                instruction & 0xFFu,
+                rotate
+            );
         }
 
         const TInt rm = instruction & 15;
 
-        TUint32 value = ReadRegister(
+        const TUint32 value = ReadRegister(
             cpu,
             rm,
             instructionAddress
         );
 
-        const TInt shiftType =
+        const TInt type =
             static_cast<TInt>((instruction >> 5) & 3);
 
-        const TInt shiftAmount =
+        const TInt amount =
             static_cast<TInt>((instruction >> 7) & 31);
 
-        if (shiftAmount == 0)
+        if (amount == 0)
             return value;
 
-        switch (shiftType)
-        {
-        case 0:
-            return value << shiftAmount;
-
-        case 1:
-            return value >> shiftAmount;
-
-        case 2:
-            if ((value & 0x80000000u) != 0)
-                return (value >> shiftAmount) |
-                       (~0u << (32 - shiftAmount));
-
-            return value >> shiftAmount;
-
-        case 3:
-            return RotateRight(value, shiftAmount);
-        }
-
-        return value;
+        return ShiftValue(
+            value,
+            type,
+            amount,
+            carry
+        );
     }
 
     void SetArithmeticFlags(
@@ -146,7 +186,7 @@ namespace
             const TUint32 overflow =
                 (left ^ right) & (left ^ result);
 
-            if ((overflow & 0x80000000u) != 0)
+            if (overflow & 0x80000000u)
                 cpu.cpsr |= KFlagV;
         }
         else
@@ -155,155 +195,660 @@ namespace
                 static_cast<TUint64>(left) +
                 static_cast<TUint64>(right);
 
-            if ((wide >> 32) != 0)
+            if (wide >> 32)
                 cpu.cpsr |= KFlagC;
 
             const TUint32 overflow =
                 ~(left ^ right) & (left ^ result);
 
-            if ((overflow & 0x80000000u) != 0)
+            if (overflow & 0x80000000u)
                 cpu.cpsr |= KFlagV;
         }
     }
 
-    TUint32 DecodeMemoryOffset(
-        const TNgbaCpuState& cpu,
-        TUint32 instruction,
-        TUint32 instructionAddress
+    void SetCarry(
+        TNgbaCpuState& cpu,
+        TBool carry
     )
     {
-        if ((instruction & (1u << 25)) == 0)
-            return instruction & 0xFFFu;
+        cpu.cpsr &= ~KFlagC;
 
-        const TInt rm = instruction & 15;
-        const TUint32 value = ReadRegister(
-            cpu,
-            rm,
-            instructionAddress
-        );
-
-        const TInt shiftType =
-            static_cast<TInt>((instruction >> 5) & 3);
-
-        const TInt shiftAmount =
-            static_cast<TInt>((instruction >> 7) & 31);
-
-        if (shiftAmount == 0)
-            return value;
-
-        switch (shiftType)
-        {
-        case 0:
-            return value << shiftAmount;
-
-        case 1:
-            return value >> shiftAmount;
-
-        case 2:
-            if ((value & 0x80000000u) != 0)
-                return (value >> shiftAmount) |
-                       (~0u << (32 - shiftAmount));
-
-            return value >> shiftAmount;
-
-        case 3:
-            return RotateRight(value, shiftAmount);
-        }
-
-        return value;
+        if (carry)
+            cpu.cpsr |= KFlagC;
     }
 
-    TInt ExecuteSingleDataTransfer(
+    TInt ExecuteArm(
         TNgbaCpuState& cpu,
         TUint32 instruction,
-        TUint32 instructionAddress
+        TUint32 address
     )
     {
-        const TBool preIndex =
-            (instruction & (1u << 24)) != 0;
+        const TUint32 condition = instruction >> 28;
 
-        const TBool addOffset =
-            (instruction & (1u << 23)) != 0;
+        if (!ConditionPassed(cpu.cpsr, condition))
+            return ENgbaCpuOk;
 
-        const TBool byteTransfer =
-            (instruction & (1u << 22)) != 0;
-
-        const TBool writeBack =
-            (instruction & (1u << 21)) != 0;
-
-        const TBool load =
-            (instruction & (1u << 20)) != 0;
-
-        const TInt rn =
-            static_cast<TInt>((instruction >> 16) & 15);
-
-        const TInt rd =
-            static_cast<TInt>((instruction >> 12) & 15);
-
-        const TUint32 base = ReadRegister(
-            cpu,
-            rn,
-            instructionAddress
-        );
-
-        const TUint32 offset = DecodeMemoryOffset(
-            cpu,
-            instruction,
-            instructionAddress
-        );
-
-        TUint32 adjusted = base;
-
-        if (addOffset)
-            adjusted += offset;
-        else
-            adjusted -= offset;
-
-        const TUint32 address =
-            preIndex ? adjusted : base;
-
-        if (load)
+        // BX Rm.
+        if ((instruction & 0x0FFFFFF0u) ==
+            0x012FFF10u)
         {
-            TUint32 value = 0;
+            const TInt rm = instruction & 15;
 
-            if (byteTransfer)
-                value = NgbaMemoryRead8(address);
-            else
-                value = NgbaMemoryRead32(address);
-
-            if (rd == 15)
-                cpu.r[15] = value & ~3u;
-            else
-                cpu.r[rd] = value;
-        }
-        else
-        {
-            const TUint32 value = ReadRegister(
+            const TUint32 target = ReadRegister(
                 cpu,
-                rd,
-                instructionAddress
+                rm,
+                address
             );
 
-            if (byteTransfer)
-            {
-                NgbaMemoryWrite8(
-                    address,
-                    static_cast<TUint8>(value & 0xFFu)
+            cpu.thumb = (target & 1u) != 0;
+
+            cpu.r[15] = cpu.thumb
+                ? (target & ~1u)
+                : (target & ~3u);
+
+            return ENgbaCpuOk;
+        }
+
+        // B / BL.
+        if ((instruction & 0x0E000000u) ==
+            0x0A000000u)
+        {
+            TInt32 displacement =
+                static_cast<TInt32>(
+                    instruction & 0x00FFFFFFu
                 );
+
+            if (displacement & 0x00800000)
+                displacement |=
+                    static_cast<TInt32>(0xFF000000u);
+
+            displacement *= 4;
+
+            if (instruction & (1u << 24))
+                cpu.r[14] = address + 4;
+
+            cpu.r[15] =
+                address + 8 +
+                static_cast<TUint32>(displacement);
+
+            return ENgbaCpuOk;
+        }
+
+        // LDR / STR / LDRB / STRB.
+        if ((instruction & 0x0C000000u) ==
+            0x04000000u)
+        {
+            const TBool pre =
+                (instruction & (1u << 24)) != 0;
+
+            const TBool add =
+                (instruction & (1u << 23)) != 0;
+
+            const TBool byte =
+                (instruction & (1u << 22)) != 0;
+
+            const TBool writeBack =
+                (instruction & (1u << 21)) != 0;
+
+            const TBool load =
+                (instruction & (1u << 20)) != 0;
+
+            const TInt rn =
+                (instruction >> 16) & 15;
+
+            const TInt rd =
+                (instruction >> 12) & 15;
+
+            const TUint32 base = ReadRegister(
+                cpu,
+                rn,
+                address
+            );
+
+            TUint32 offset = instruction & 0xFFFu;
+
+            if (instruction & (1u << 25))
+            {
+                const TInt rm = instruction & 15;
+
+                TBool carry = EFalse;
+
+                offset = ShiftValue(
+                    ReadRegister(cpu, rm, address),
+                    (instruction >> 5) & 3,
+                    (instruction >> 7) & 31,
+                    carry
+                );
+            }
+
+            const TUint32 adjusted =
+                add ? base + offset : base - offset;
+
+            const TUint32 memoryAddress =
+                pre ? adjusted : base;
+
+            if (load)
+            {
+                const TUint32 value = byte
+                    ? NgbaMemoryRead8(memoryAddress)
+                    : NgbaMemoryRead32(memoryAddress);
+
+                if (rd == 15)
+                    cpu.r[15] = value & ~3u;
+                else
+                    cpu.r[rd] = value;
             }
             else
             {
-                NgbaMemoryWrite32(address, value);
+                const TUint32 value = ReadRegister(
+                    cpu,
+                    rd,
+                    address
+                );
+
+                if (byte)
+                    NgbaMemoryWrite8(
+                        memoryAddress,
+                        static_cast<TUint8>(value)
+                    );
+                else
+                    NgbaMemoryWrite32(
+                        memoryAddress,
+                        value
+                    );
+            }
+
+            if (!pre || writeBack)
+            {
+                if (rn != 15)
+                    cpu.r[rn] = adjusted;
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        // Data processing.
+        if ((instruction & 0x0C000000u) == 0)
+        {
+            const TInt opcode =
+                (instruction >> 21) & 15;
+
+            const TBool setFlags =
+                (instruction & (1u << 20)) != 0;
+
+            const TInt rn =
+                (instruction >> 16) & 15;
+
+            const TInt rd =
+                (instruction >> 12) & 15;
+
+            const TUint32 left = ReadRegister(
+                cpu,
+                rn,
+                address
+            );
+
+            TBool shifterCarry = EFalse;
+
+            const TUint32 right = DecodeOperand2(
+                cpu,
+                instruction,
+                address,
+                shifterCarry
+            );
+
+            TUint32 result = 0;
+            TBool writeResult = ETrue;
+            TBool arithmetic = EFalse;
+            TBool subtract = EFalse;
+
+            switch (opcode)
+            {
+            case 0: result = left & right; break;
+            case 1: result = left ^ right; break;
+
+            case 2:
+                result = left - right;
+                arithmetic = ETrue;
+                subtract = ETrue;
+                break;
+
+            case 3:
+                result = right - left;
+                arithmetic = ETrue;
+                subtract = ETrue;
+                break;
+
+            case 4:
+                result = left + right;
+                arithmetic = ETrue;
+                break;
+
+            case 10:
+                result = left - right;
+                arithmetic = ETrue;
+                subtract = ETrue;
+                writeResult = EFalse;
+                break;
+
+            case 12: result = left | right; break;
+            case 13: result = right; break;
+            case 14: result = left & ~right; break;
+            case 15: result = ~right; break;
+
+            default:
+                return ENgbaCpuUnsupported;
+            }
+
+            if (writeResult)
+            {
+                if (rd == 15)
+                    cpu.r[15] = result & ~3u;
+                else
+                    cpu.r[rd] = result;
+            }
+
+            if (setFlags)
+            {
+                if (arithmetic)
+                {
+                    SetArithmeticFlags(
+                        cpu,
+                        left,
+                        right,
+                        result,
+                        subtract
+                    );
+                }
+                else
+                {
+                    SetNzFlags(cpu, result);
+                    SetCarry(cpu, shifterCarry);
+                }
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        return ENgbaCpuUnsupported;
+    }
+
+    TInt ExecuteThumb(
+        TNgbaCpuState& cpu,
+        TUint16 instruction,
+        TUint32 address
+    )
+    {
+        const TInt top = instruction >> 13;
+
+        // Format 1: LSL / LSR / ASR immediate.
+        if (top == 0)
+        {
+            const TInt type =
+                (instruction >> 11) & 3;
+
+            const TInt amount =
+                (instruction >> 6) & 31;
+
+            const TInt rs =
+                (instruction >> 3) & 7;
+
+            const TInt rd = instruction & 7;
+
+            TBool carry =
+                (cpu.cpsr & KFlagC) != 0;
+
+            if (type != 3)
+            {
+                const TUint32 value = cpu.r[rs];
+
+                TUint32 result = value;
+
+                if (type == 0)
+                    result = ShiftValue(value, 0, amount, carry);
+                else if (type == 1)
+                    result = ShiftValue(
+                        value, 1,
+                        amount == 0 ? 32 : amount,
+                        carry
+                    );
+                else
+                    result = ShiftValue(
+                        value, 2,
+                        amount == 0 ? 32 : amount,
+                        carry
+                    );
+
+                cpu.r[rd] = result;
+                SetNzFlags(cpu, result);
+                SetCarry(cpu, carry);
+
+                return ENgbaCpuOk;
             }
         }
 
-        if (!preIndex || writeBack)
+        // Format 2: ADD / SUB register or immediate.
+        if ((instruction & 0xF800u) == 0x1800u)
         {
-            if (rn != 15)
-                cpu.r[rn] = adjusted;
+            const TBool immediate =
+                (instruction & (1u << 10)) != 0;
+
+            const TBool subtract =
+                (instruction & (1u << 9)) != 0;
+
+            const TInt rd = instruction & 7;
+            const TInt rn = (instruction >> 3) & 7;
+
+            const TUint32 left = cpu.r[rn];
+
+            const TUint32 right = immediate
+                ? ((instruction >> 6) & 7)
+                : cpu.r[(instruction >> 6) & 7];
+
+            const TUint32 result = subtract
+                ? left - right
+                : left + right;
+
+            cpu.r[rd] = result;
+
+            SetArithmeticFlags(
+                cpu,
+                left,
+                right,
+                result,
+                subtract
+            );
+
+            return ENgbaCpuOk;
         }
 
-        return ENgbaCpuOk;
+        // MOV / CMP / ADD / SUB immediate.
+        if ((instruction & 0xE000u) == 0x2000u)
+        {
+            const TInt opcode =
+                (instruction >> 11) & 3;
+
+            const TInt rd =
+                (instruction >> 8) & 7;
+
+            const TUint32 value =
+                instruction & 0xFFu;
+
+            const TUint32 old = cpu.r[rd];
+
+            TUint32 result = value;
+
+            switch (opcode)
+            {
+            case 0:
+                cpu.r[rd] = result;
+                SetNzFlags(cpu, result);
+                break;
+
+            case 1:
+                result = old - value;
+                SetArithmeticFlags(
+                    cpu, old, value, result, ETrue
+                );
+                break;
+
+            case 2:
+                result = old + value;
+                cpu.r[rd] = result;
+                SetArithmeticFlags(
+                    cpu, old, value, result, EFalse
+                );
+                break;
+
+            case 3:
+                result = old - value;
+                cpu.r[rd] = result;
+                SetArithmeticFlags(
+                    cpu, old, value, result, ETrue
+                );
+                break;
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        // ALU operations.
+        if ((instruction & 0xFC00u) == 0x4000u)
+        {
+            const TInt opcode =
+                (instruction >> 6) & 15;
+
+            const TInt rs =
+                (instruction >> 3) & 7;
+
+            const TInt rd = instruction & 7;
+
+            const TUint32 left = cpu.r[rd];
+            const TUint32 right = cpu.r[rs];
+
+            TUint32 result = left;
+
+            switch (opcode)
+            {
+            case 0: result = left & right; break;
+            case 1: result = left ^ right; break;
+
+            case 2:
+                result = ShiftValue(
+                    left, 0, right & 0xFFu,
+                    *(new TBool(EFalse))
+                );
+                break;
+
+            case 4:
+                result = ShiftValue(
+                    left, 0, right & 0xFFu,
+                    *(new TBool(EFalse))
+                );
+                break;
+
+            case 8:
+                result = left & right;
+                SetNzFlags(cpu, result);
+                return ENgbaCpuOk;
+
+            case 10:
+                result = left - right;
+                SetArithmeticFlags(
+                    cpu, left, right, result, ETrue
+                );
+                return ENgbaCpuOk;
+
+            case 12: result = left | right; break;
+            case 13: result = left * right; break;
+            case 14: result = left & ~right; break;
+            case 15: result = ~right; break;
+
+            default:
+                return ENgbaCpuUnsupported;
+            }
+
+            cpu.r[rd] = result;
+            SetNzFlags(cpu, result);
+
+            return ENgbaCpuOk;
+        }
+
+        // LDR / STR word and byte.
+        if ((instruction & 0xF000u) == 0x6000u)
+        {
+            const TBool byte =
+                (instruction & 0x1000u) != 0;
+
+            const TBool load =
+                (instruction & 0x0800u) != 0;
+
+            const TInt offset =
+                (instruction >> 6) & 31;
+
+            const TInt rb =
+                (instruction >> 3) & 7;
+
+            const TInt rd = instruction & 7;
+
+            const TUint32 memoryAddress =
+                cpu.r[rb] + (
+                    byte ? offset : offset * 4
+                );
+
+            if (load)
+            {
+                cpu.r[rd] = byte
+                    ? NgbaMemoryRead8(memoryAddress)
+                    : NgbaMemoryRead32(memoryAddress);
+            }
+            else
+            {
+                if (byte)
+                    NgbaMemoryWrite8(
+                        memoryAddress,
+                        static_cast<TUint8>(cpu.r[rd])
+                    );
+                else
+                    NgbaMemoryWrite32(
+                        memoryAddress,
+                        cpu.r[rd]
+                    );
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        // LDR literal.
+        if ((instruction & 0xF800u) == 0x4800u)
+        {
+            const TInt rd =
+                (instruction >> 8) & 7;
+
+            const TUint32 addressBase =
+                (address + 4) & ~3u;
+
+            const TUint32 memoryAddress =
+                addressBase +
+                ((instruction & 0xFFu) * 4);
+
+            cpu.r[rd] = NgbaMemoryRead32(memoryAddress);
+
+            return ENgbaCpuOk;
+        }
+
+        // Conditional branch.
+        if ((instruction & 0xF000u) == 0xD000u)
+        {
+            const TInt condition =
+                (instruction >> 8) & 15;
+
+            if (condition == 15)
+                return ENgbaCpuUnsupported;
+
+            if (condition == 14)
+                return ENgbaCpuUnsupported;
+
+            if (ConditionPassed(cpu.cpsr, condition))
+            {
+                TInt32 offset =
+                    static_cast<TInt8>(instruction & 0xFFu);
+
+                offset *= 2;
+
+                cpu.r[15] =
+                    address + 4 +
+                    static_cast<TUint32>(offset);
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        // Unconditional branch.
+        if ((instruction & 0xF800u) == 0xE000u)
+        {
+            TInt32 offset =
+                static_cast<TInt11>(instruction & 0x7FFu);
+
+            offset *= 2;
+
+            cpu.r[15] =
+                address + 4 +
+                static_cast<TUint32>(offset);
+
+            return ENgbaCpuOk;
+        }
+
+        // BX.
+        if ((instruction & 0xFF87u) == 0x4700u)
+        {
+            const TInt rm =
+                (instruction >> 3) & 15;
+
+            const TUint32 target =
+                ReadRegister(cpu, rm, address);
+
+            cpu.thumb = (target & 1u) != 0;
+
+            cpu.r[15] = cpu.thumb
+                ? (target & ~1u)
+                : (target & ~3u);
+
+            return ENgbaCpuOk;
+        }
+
+        // High register MOV.
+        if ((instruction & 0xFC00u) == 0x4400u)
+        {
+            const TInt opcode =
+                (instruction >> 8) & 3;
+
+            const TInt rd =
+                (instruction & 7) |
+                ((instruction >> 4) & 8);
+
+            const TInt rs =
+                (instruction >> 3) & 15;
+
+            const TUint32 value =
+                ReadRegister(cpu, rs, address);
+
+            if (opcode == 0)
+            {
+                if (rd == 15)
+                    cpu.r[15] = value & ~1u;
+                else
+                    cpu.r[rd] = value;
+            }
+            else if (opcode == 1)
+            {
+                const TUint32 result =
+                    cpu.r[rd] - value;
+
+                SetArithmeticFlags(
+                    cpu,
+                    cpu.r[rd],
+                    value,
+                    result,
+                    ETrue
+                );
+            }
+            else if (opcode == 2)
+            {
+                if (rd == 15)
+                    cpu.r[15] = value & ~1u;
+                else
+                    cpu.r[rd] = value;
+            }
+            else
+            {
+                return ENgbaCpuUnsupported;
+            }
+
+            return ENgbaCpuOk;
+        }
+
+        return ENgbaCpuUnsupported;
     }
 }
 
@@ -312,12 +857,12 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     for (TInt i = 0; i < 16; ++i)
         cpu.r[i] = 0;
 
-    // Titik awal sementara untuk pengujian ROM langsung.
-    // Boot BIOS GBA belum diterapkan.
     cpu.r[15] = KRomBase;
-
     cpu.cpsr = 0x000000D3u;
+
     cpu.halted = EFalse;
+    cpu.thumb = EFalse;
+    cpu.cycles = 0;
 }
 
 TInt NgbaCpuStep(TNgbaCpuState& cpu)
@@ -330,188 +875,50 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
 
     const TUint32 address = cpu.r[15];
 
-    if ((address & 3u) != 0)
+    if (cpu.thumb)
+    {
+        if (address & 1u)
+            return ENgbaCpuBadArgument;
+
+        const TUint16 instruction =
+            NgbaMemoryRead16(address);
+
+        cpu.r[15] = address + 2;
+
+        const TInt result = ExecuteThumb(
+            cpu,
+            instruction,
+            address
+        );
+
+        if (result == ENgbaCpuOk)
+            ++cpu.cycles;
+        else
+            cpu.r[15] = address;
+
+        return result;
+    }
+
+    if (address & 3u)
         return ENgbaCpuBadArgument;
 
-    // Ambil instruksi melalui GBA Memory Bus.
     const TUint32 instruction =
         NgbaMemoryRead32(address);
 
     cpu.r[15] = address + 4;
 
-    const TUint32 condition = instruction >> 28;
+    const TInt result = ExecuteArm(
+        cpu,
+        instruction,
+        address
+    );
 
-    if (!ConditionPassed(cpu.cpsr, condition))
-        return ENgbaCpuOk;
+    if (result == ENgbaCpuOk)
+        ++cpu.cycles;
+    else
+        cpu.r[15] = address;
 
-    // BX Rm.
-    if ((instruction & 0x0FFFFFF0u) == 0x012FFF10u)
-    {
-        const TInt rm = instruction & 15;
-
-        const TUint32 target = ReadRegister(
-            cpu,
-            rm,
-            address
-        );
-
-        if ((target & 1u) != 0)
-        {
-            // Thumb belum didukung.
-            cpu.r[15] = target & ~1u;
-            return ENgbaCpuUnsupported;
-        }
-
-        cpu.r[15] = target & ~3u;
-        return ENgbaCpuOk;
-    }
-
-    // B / BL.
-    if ((instruction & 0x0E000000u) == 0x0A000000u)
-    {
-        TInt32 displacement =
-            static_cast<TInt32>(instruction & 0x00FFFFFFu);
-
-        if ((displacement & 0x00800000) != 0)
-            displacement |= static_cast<TInt32>(0xFF000000u);
-
-        displacement <<= 2;
-
-        if ((instruction & (1u << 24)) != 0)
-            cpu.r[14] = address + 4;
-
-        cpu.r[15] =
-            address + 8 + static_cast<TUint32>(displacement);
-
-        return ENgbaCpuOk;
-    }
-
-    // LDR / STR / LDRB / STRB.
-    if ((instruction & 0x0C000000u) == 0x04000000u)
-    {
-        return ExecuteSingleDataTransfer(
-            cpu,
-            instruction,
-            address
-        );
-    }
-
-    // Data processing ARM.
-    if ((instruction & 0x0C000000u) == 0)
-    {
-        const TInt opcode =
-            static_cast<TInt>((instruction >> 21) & 15);
-
-        const TBool setFlags =
-            (instruction & (1u << 20)) != 0;
-
-        const TInt rn =
-            static_cast<TInt>((instruction >> 16) & 15);
-
-        const TInt rd =
-            static_cast<TInt>((instruction >> 12) & 15);
-
-        const TUint32 left = ReadRegister(
-            cpu,
-            rn,
-            address
-        );
-
-        const TUint32 right = DecodeOperand2(
-            cpu,
-            instruction,
-            address
-        );
-
-        TUint32 result = 0;
-        TBool writeResult = ETrue;
-        TBool arithmetic = EFalse;
-        TBool subtract = EFalse;
-
-        switch (opcode)
-        {
-        case 0: // AND
-            result = left & right;
-            break;
-
-        case 1: // EOR
-            result = left ^ right;
-            break;
-
-        case 2: // SUB
-            result = left - right;
-            arithmetic = ETrue;
-            subtract = ETrue;
-            break;
-
-        case 3: // RSB
-            result = right - left;
-            arithmetic = ETrue;
-            subtract = ETrue;
-            break;
-
-        case 4: // ADD
-            result = left + right;
-            arithmetic = ETrue;
-            break;
-
-        case 10: // CMP
-            result = left - right;
-            arithmetic = ETrue;
-            subtract = ETrue;
-            writeResult = EFalse;
-            break;
-
-        case 12: // ORR
-            result = left | right;
-            break;
-
-        case 13: // MOV
-            result = right;
-            break;
-
-        case 14: // BIC
-            result = left & (~right);
-            break;
-
-        case 15: // MVN
-            result = ~right;
-            break;
-
-        default:
-            cpu.r[15] = address;
-            return ENgbaCpuUnsupported;
-        }
-
-        if (writeResult && rd != 15)
-            cpu.r[rd] = result;
-
-        if (rd == 15 && writeResult)
-            cpu.r[15] = result & ~3u;
-
-        if (setFlags)
-        {
-            if (arithmetic)
-            {
-                SetArithmeticFlags(
-                    cpu,
-                    left,
-                    right,
-                    result,
-                    subtract
-                );
-            }
-            else
-            {
-                SetNzFlags(cpu, result);
-            }
-        }
-
-        return ENgbaCpuOk;
-    }
-
-    cpu.r[15] = address;
-    return ENgbaCpuUnsupported;
+    return result;
 }
 
 TUint32 NgbaCpuGetRegister(
@@ -525,7 +932,16 @@ TUint32 NgbaCpuGetRegister(
     return cpu.r[index];
 }
 
-TUint32 NgbaCpuGetCpsr(const TNgbaCpuState& cpu)
+TUint32 NgbaCpuGetCpsr(
+    const TNgbaCpuState& cpu
+)
 {
     return cpu.cpsr;
+}
+
+TBool NgbaCpuIsThumb(
+    const TNgbaCpuState& cpu
+)
+{
+    return cpu.thumb;
 }
