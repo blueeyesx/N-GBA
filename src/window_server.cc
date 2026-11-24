@@ -294,6 +294,69 @@ TInt LoadRomList(TBuf<KMaxFileName>* names)
 }
 
 // --------------------------------------------------
+// DIAGNOSTIK CPU
+// --------------------------------------------------
+
+void FormatHex8(TUint32 value, char* output)
+{
+    const char* digits = "0123456789ABCDEF";
+
+    for (TInt i = 0; i < 8; ++i) {
+        const TInt shift = (7 - i) * 4;
+        output[i] = digits[(value >> shift) & 0x0F];
+    }
+
+    output[8] = '\0';
+}
+
+void FormatCpuDiagnostic(
+    const TNgbaCpuState& cpu,
+    char* output
+)
+{
+    char pc[9];
+    char opcode[9];
+
+    FormatHex8(cpu.lastAddress, pc);
+    FormatHex8(cpu.lastOpcode, opcode);
+
+    const char* mode =
+        cpu.lastInstructionSize == 2
+        ? "THUMB"
+        : "ARM";
+
+    TInt position = 0;
+
+    const char* prefix = "PC:";
+
+    while (*prefix) {
+        output[position++] = *prefix++;
+    }
+
+    for (TInt i = 0; i < 8; ++i) {
+        output[position++] = pc[i];
+    }
+
+    const char* middle = " OP:";
+
+    while (*middle) {
+        output[position++] = *middle++;
+    }
+
+    for (TInt i = 0; i < 8; ++i) {
+        output[position++] = opcode[i];
+    }
+
+    output[position++] = ' ';
+
+    while (*mode) {
+        output[position++] = *mode++;
+    }
+
+    output[position] = '\0';
+}
+
+// --------------------------------------------------
 // TIMER CPU
 // --------------------------------------------------
 
@@ -503,7 +566,8 @@ void DrawMenu(
     const char* message,
     TBool indonesian,
     TBuf<KMaxFileName>* romNames,
-    TInt romCount
+    TInt romCount,
+    const char* diagnostic
 )
 {
     Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
@@ -555,14 +619,35 @@ void DrawMenu(
         }
 
         if (page == ELanguagePage && i == languageMode) {
-            DrawText(gc, "*", size.iWidth - 18,
-                     y + textOffset, KWhite);
+            DrawText(
+                gc,
+                "*",
+                size.iWidth - 18,
+                y + textOffset,
+                KWhite
+            );
         }
 
         if (page == EFontPage && i == fontMode) {
-            DrawText(gc, "*", size.iWidth - 18,
-                     y + textOffset, KWhite);
+            DrawText(
+                gc,
+                "*",
+                size.iWidth - 18,
+                y + textOffset,
+                KWhite
+            );
         }
+    }
+
+    // Informasi alamat PC dan opcode saat CPU berhenti.
+    if (diagnostic != NULL && diagnostic[0] != '\0') {
+        DrawText(
+            gc,
+            diagnostic,
+            8,
+            size.iHeight - 30,
+            KWhite
+        );
     }
 
     DrawText(
@@ -871,6 +956,10 @@ TInt RunWindowServer()
                                     ? "ATAS BAWAH PILIH KEMBALI"
                                     : "UP DOWN SELECT BACK";
 
+                                // Informasi diagnostik CPU.
+                                char diagnostic[64];
+                                diagnostic[0] = '\0';
+
                                 // Status CPU.
                                 TNgbaCpuState cpu;
                                 NgbaCpuReset(cpu);
@@ -1018,6 +1107,16 @@ TInt RunWindowServer()
                                                     timerReady
                                                 );
 
+                                                // Reset diagnostik setiap kali
+                                                // memilih ROM baru.
+                                                if (
+                                                    oldPage == ERomPage &&
+                                                    page == ERomPage &&
+                                                    cpuActive
+                                                ) {
+                                                    diagnostic[0] = '\0';
+                                                }
+
                                                 if (
                                                     page == ERomPage &&
                                                     oldPage != ERomPage
@@ -1141,6 +1240,11 @@ TInt RunWindowServer()
                                                 cpuActive = EFalse;
 
                                                 if (stepResult == ENgbaCpuUnsupported) {
+                                                    FormatCpuDiagnostic(
+                                                        cpu,
+                                                        diagnostic
+                                                    );
+
                                                     message = indonesian
                                                         ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
                                                         : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
@@ -1200,7 +1304,8 @@ TInt RunWindowServer()
                                                 message,
                                                 indonesian,
                                                 romNames,
-                                                romCount
+                                                romCount,
+                                                diagnostic
                                             );
 
                                             gc.Deactivate();
