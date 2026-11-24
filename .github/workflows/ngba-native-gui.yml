@@ -1,5 +1,5 @@
 
-name: N-GBA - Native GUI v5
+name: N-GBA - Native ROM Browser v6
 
 on:
   workflow_dispatch:
@@ -88,7 +88,11 @@ jobs:
             }
           done
 
-          echo "Source validation passed."
+          grep -q 'RFs' src/window_server.cc
+          grep -q 'GetDir' src/window_server.cc
+          grep -q 'IsGbaFile' src/window_server.cc
+
+          echo "ROM browser source validation passed."
 
       - name: Initialize Symbian project
         shell: bash
@@ -127,7 +131,7 @@ jobs:
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
-          echo "N-GBA sources installed."
+          echo "N-GBA ROM browser sources installed."
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -148,9 +152,6 @@ jobs:
                   "ERROR: GuiWindowServerMain() not found exactly once."
               )
 
-          # The original function uses TRAPD and CTrapCleanup.
-          # This runtime does not provide the required TTrap symbols.
-          # Replace the final function with a direct call.
           prefix = content.split(marker, 1)[0]
 
           replacement = """int GuiWindowServerMain() {
@@ -160,8 +161,7 @@ jobs:
 
           path.write_text(prefix + replacement)
 
-          print("Patched GuiWindowServerMain():")
-          print(path.read_text()[-300:])
+          print("GuiWindowServerMain patch completed.")
           PY
 
           if grep -nE 'TRAPD|CTrapCleanup|TTrap' \
@@ -169,8 +169,6 @@ jobs:
             echo "ERROR: Unsupported trap implementation remains."
             exit 1
           fi
-
-          echo "TRAPD removal verified."
 
       - name: Configure CMake
         shell: bash
@@ -181,6 +179,11 @@ jobs:
           cmake_minimum_required(VERSION 3.28)
 
           project(ngba_native_gui LANGUAGES CXX ASM)
+
+          if(SYMBIAN_ARCHITECTURE STREQUAL "armv5t")
+              set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL
+                  "ARMv5T EKA2 runtime" FORCE)
+          endif()
 
           include(SymbianApp)
 
@@ -195,6 +198,7 @@ jobs:
               Symbian::Stackless
               Symbian::WindowServer
               Symbian::Gdi
+              Symbian::FileServer
           )
           CMAKE
 
@@ -219,7 +223,7 @@ jobs:
           content = path.read_text()
 
           content, count = re.subn(
-              r'(?m)^(\s*architecture\s*=\s*)"[^"]+"\s*$',
+              r'(?m)^(\s*architecture\s*=\s*)"[^\"]+"\s*$',
               lambda m: m.group(1) + '"' + architecture + '"',
               content,
               count=1
@@ -234,35 +238,7 @@ jobs:
           print(path.read_text())
           PY
 
-      - name: Enable legacy EKA2 runtime
-        if: matrix.legacy
-        shell: bash
-        run: |
-          set -e
-
-          python - "$PROJECT/CMakeLists.txt" <<'PY'
-          import pathlib
-          import sys
-
-          path = pathlib.Path(sys.argv[1])
-          content = path.read_text()
-
-          marker = "include(SymbianApp)"
-
-          if content.count(marker) != 1:
-              raise SystemExit("CMake marker not found.")
-
-          setting = (
-              'set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL '
-              '"ARMv5T older-ROM EKA2 runtime" FORCE)\n'
-          )
-
-          path.write_text(
-              content.replace(marker, setting + marker, 1)
-          )
-          PY
-
-      - name: Verify sources
+      - name: Verify sources and dependencies
         shell: bash
         run: |
           set -e
@@ -273,6 +249,9 @@ jobs:
           test -s "$PROJECT/src/window_server.h"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
+          grep -q 'Symbian::FileServer' "$PROJECT/CMakeLists.txt"
+          grep -q '#include <f32file.h>' \
+            "$PROJECT/src/window_server.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
@@ -285,7 +264,7 @@ jobs:
             exit 1
           fi
 
-          echo "Source verification passed."
+          echo "Source and dependency verification passed."
 
       - name: Clean build
         shell: bash
@@ -327,7 +306,6 @@ jobs:
             | tee "$RUNNER_TEMP/ngba-e32-inspection.txt"
 
           if [ "${{ matrix.legacy }}" = "true" ]; then
-
             if grep -Eiq \
               'Dll: *(libc|libm|libpthread)\.dll' \
               "$RUNNER_TEMP/ngba-e32-inspection.txt"; then
@@ -361,8 +339,10 @@ jobs:
 
           if [ ! -s "$SIS" ]; then
             echo "ERROR: SIS not generated."
+
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
+
             exit 1
           fi
 
@@ -382,7 +362,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Native-GUI-v5-${{ matrix.target }}
+          name: N-GBA-Native-ROM-Browser-v6-${{ matrix.target }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/ngba_native_gui/.symbian/build/
