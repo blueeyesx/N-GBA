@@ -9,28 +9,49 @@
 
 namespace {
 
-// Menu utama
+// --------------------------------------------------
+// JUMLAH MENU
+// --------------------------------------------------
+
 const TInt KMainMenuCount = 7;
-
-// Menu pengaturan
-const TInt KSettingsMenuCount = 2;
-
-// Menu bahasa
+const TInt KSettingsMenuCount = 3;
 const TInt KLanguageMenuCount = 4;
+const TInt KFontMenuCount = 4;
 
-// Mode bahasa
+// --------------------------------------------------
+// MODE BAHASA
+// --------------------------------------------------
+
 enum TLanguageMode {
     ELanguageAuto = 0,
     ELanguageIndonesian = 1,
     ELanguageEnglish = 2
 };
 
-// Halaman aplikasi
+// --------------------------------------------------
+// MODE FONT
+// --------------------------------------------------
+
+enum TFontMode {
+    EFontSmall = 0,
+    EFontMedium = 1,
+    EFontLarge = 2
+};
+
+// --------------------------------------------------
+// HALAMAN
+// --------------------------------------------------
+
 enum TMenuPage {
     EMainPage = 0,
     ESettingsPage,
-    ELanguagePage
+    ELanguagePage,
+    EFontPage
 };
+
+// --------------------------------------------------
+// WARNA
+// --------------------------------------------------
 
 const TUint KBackground = 0x00080D18;
 const TUint KPanel      = 0x00121D30;
@@ -40,44 +61,116 @@ const TUint KMuted      = 0x0098A9C2;
 
 const TInt KMenuTop = 72;
 
+// --------------------------------------------------
+// FILE PENGATURAN
+// --------------------------------------------------
+
 _LIT(KLanguageFolder, "C:\\Data\\N-GBA\\");
-_LIT(KLanguageFile, "C:\\Data\\N-GBA\\language.dat");
+
+_LIT(
+    KLanguageFile,
+    "C:\\Data\\N-GBA\\language.dat"
+);
+
+_LIT(
+    KFontFile,
+    "C:\\Data\\N-GBA\\font.dat"
+);
 
 // --------------------------------------------------
-// Penyimpanan bahasa
+// TINGGI BARIS MENU
 // --------------------------------------------------
 
-TInt LoadLanguageMode()
+TInt MenuRowHeight(
+    const TSize& size,
+    TInt fontMode
+)
+{
+    if (size.iHeight >= 300) {
+
+        if (fontMode == EFontLarge) {
+            return 42;
+        }
+
+        if (fontMode == EFontMedium) {
+            return 34;
+        }
+
+        return 27;
+    }
+
+    if (fontMode == EFontLarge) {
+        return 32;
+    }
+
+    if (fontMode == EFontMedium) {
+        return 27;
+    }
+
+    return 22;
+}
+
+// --------------------------------------------------
+// UKURAN FONT TWIPS
+// --------------------------------------------------
+
+TInt FontHeight(TInt fontMode)
+{
+    if (fontMode == EFontLarge) {
+        return 200;
+    }
+
+    if (fontMode == EFontMedium) {
+        return 160;
+    }
+
+    return 120;
+}
+
+// --------------------------------------------------
+// MEMBACA PENGATURAN SATU BYTE
+// --------------------------------------------------
+
+TInt LoadByteSetting(
+    const TDesC& fileName,
+    TInt defaultValue,
+    TInt minimum,
+    TInt maximum
+)
 {
     RFs fs;
 
     if (fs.Connect() != KErrNone) {
-        return ELanguageAuto;
+        return defaultValue;
     }
 
     RFile file;
 
     TInt error = file.Open(
         fs,
-        KLanguageFile,
+        fileName,
         EFileRead | EFileShareReadersOnly
     );
 
-    TInt mode = ELanguageAuto;
+    TInt value = defaultValue;
 
     if (error == KErrNone) {
+
         TBuf8<1> data;
 
         error = file.Read(data);
 
-        if (error == KErrNone && data.Length() > 0) {
-            const TInt value = data[0];
+        if (
+            error == KErrNone &&
+            data.Length() > 0
+        ) {
+            const TInt readValue = data[0];
 
             if (
-                value >= ELanguageAuto &&
-                value <= ELanguageEnglish
+                readValue >= minimum &&
+                readValue <= maximum
             ) {
-                mode = value;
+                value = readValue;
             }
         }
 
@@ -86,10 +179,17 @@ TInt LoadLanguageMode()
 
     fs.Close();
 
-    return mode;
+    return value;
 }
 
-TInt SaveLanguageMode(TInt mode)
+// --------------------------------------------------
+// MENYIMPAN PENGATURAN SATU BYTE
+// --------------------------------------------------
+
+TInt SaveByteSetting(
+    const TDesC& fileName,
+    TInt value
+)
 {
     RFs fs;
 
@@ -113,14 +213,17 @@ TInt SaveLanguageMode(TInt mode)
 
     error = file.Replace(
         fs,
-        KLanguageFile,
+        fileName,
         EFileWrite | EFileShareExclusive
     );
 
     if (error == KErrNone) {
+
         TBuf8<1> data;
 
-        data.Append(static_cast<TUint8>(mode));
+        data.Append(
+            static_cast<TUint8>(value)
+        );
 
         error = file.Write(data);
 
@@ -133,8 +236,26 @@ TInt SaveLanguageMode(TInt mode)
 }
 
 // --------------------------------------------------
-// Deteksi bahasa
+// BAHASA
 // --------------------------------------------------
+
+TInt LoadLanguageMode()
+{
+    return LoadByteSetting(
+        KLanguageFile,
+        ELanguageAuto,
+        ELanguageAuto,
+        ELanguageEnglish
+    );
+}
+
+TInt SaveLanguageMode(TInt mode)
+{
+    return SaveByteSetting(
+        KLanguageFile,
+        mode
+    );
+}
 
 TBool IsIndonesian(TInt mode)
 {
@@ -150,7 +271,52 @@ TBool IsIndonesian(TInt mode)
 }
 
 // --------------------------------------------------
-// Menu
+// FONT
+// --------------------------------------------------
+
+TInt LoadFontMode()
+{
+    return LoadByteSetting(
+        KFontFile,
+        EFontMedium,
+        EFontSmall,
+        EFontLarge
+    );
+}
+
+TInt SaveFontMode(TInt mode)
+{
+    return SaveByteSetting(
+        KFontFile,
+        mode
+    );
+}
+
+// --------------------------------------------------
+// MENGAMBIL FONT SESUAI UKURAN
+// --------------------------------------------------
+
+TInt AcquireFont(
+    CWsScreenDevice& screen,
+    TInt fontMode,
+    CFont*& font
+)
+{
+    _LIT(KTypeface, "");
+
+    const TFontSpec fontSpec(
+        KTypeface,
+        FontHeight(fontMode)
+    );
+
+    return screen.GetNearestFontToDesignHeightInTwips(
+        font,
+        fontSpec
+    );
+}
+
+// --------------------------------------------------
+// JUMLAH ITEM MENU
 // --------------------------------------------------
 
 TInt MenuCount(TInt page)
@@ -163,8 +329,16 @@ TInt MenuCount(TInt page)
         return KLanguageMenuCount;
     }
 
+    if (page == EFontPage) {
+        return KFontMenuCount;
+    }
+
     return KMainMenuCount;
 }
+
+// --------------------------------------------------
+// TEKS MENU
+// --------------------------------------------------
 
 const char* MenuText(
     TInt page,
@@ -175,6 +349,7 @@ const char* MenuText(
     if (page == EMainPage) {
 
         if (indonesian) {
+
             static const char* menu[] = {
                 "PUSTAKA GAME",
                 "MUAT ROM",
@@ -204,8 +379,10 @@ const char* MenuText(
     if (page == ESettingsPage) {
 
         if (indonesian) {
+
             static const char* menu[] = {
                 "BAHASA",
+                "UKURAN FONT",
                 "KEMBALI"
             };
 
@@ -214,6 +391,7 @@ const char* MenuText(
 
         static const char* menu[] = {
             "LANGUAGE",
+            "FONT SIZE",
             "BACK"
         };
 
@@ -223,6 +401,7 @@ const char* MenuText(
     if (page == ELanguagePage) {
 
         if (indonesian) {
+
             static const char* menu[] = {
                 "OTOMATIS (SISTEM HP)",
                 "BAHASA INDONESIA",
@@ -243,11 +422,35 @@ const char* MenuText(
         return menu[index];
     }
 
+    if (page == EFontPage) {
+
+        if (indonesian) {
+
+            static const char* menu[] = {
+                "KECIL",
+                "SEDANG",
+                "BESAR",
+                "KEMBALI"
+            };
+
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "SMALL",
+            "MEDIUM",
+            "LARGE",
+            "BACK"
+        };
+
+        return menu[index];
+    }
+
     return "";
 }
 
 // --------------------------------------------------
-// Grafik
+// GRAFIK
 // --------------------------------------------------
 
 void Fill(
@@ -259,14 +462,31 @@ void Fill(
     TUint color
 )
 {
-    gc.SetPenStyle(CGraphicsContext::ENullPen);
-    gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
-    gc.SetBrushColor(TRgb(color));
+    gc.SetPenStyle(
+        CGraphicsContext::ENullPen
+    );
+
+    gc.SetBrushStyle(
+        CGraphicsContext::ESolidBrush
+    );
+
+    gc.SetBrushColor(
+        TRgb(color)
+    );
 
     gc.DrawRect(
-        TRect(x, y, x + width, y + height)
+        TRect(
+            x,
+            y,
+            x + width,
+            y + height
+        )
     );
 }
+
+// --------------------------------------------------
+// MENULIS TEKS
+// --------------------------------------------------
 
 void DrawText(
     CWindowGc& gc,
@@ -277,6 +497,7 @@ void DrawText(
 )
 {
     TUint16 buffer[96];
+
     TInt length = 0;
 
     while (
@@ -289,14 +510,23 @@ void DrawText(
         ++length;
     }
 
-    gc.SetPenStyle(CGraphicsContext::ESolidPen);
-    gc.SetPenColor(TRgb(color));
+    gc.SetPenStyle(
+        CGraphicsContext::ESolidPen
+    );
+
+    gc.SetPenColor(
+        TRgb(color)
+    );
 
     gc.DrawText(
         TPtrC16(buffer, length),
         TPoint(x, y)
     );
 }
+
+// --------------------------------------------------
+// MENGGAMBAR MENU
+// --------------------------------------------------
 
 void DrawMenu(
     CWindowGc& gc,
@@ -305,6 +535,7 @@ void DrawMenu(
     TInt page,
     TInt selected,
     TInt languageMode,
+    TInt fontMode,
     const char* message,
     TBool indonesian
 )
@@ -348,14 +579,20 @@ void DrawMenu(
     const TInt count = MenuCount(page);
 
     const TInt rowHeight =
-        size.iHeight >= 300 ? 27 : 22;
+        MenuRowHeight(size, fontMode);
+
+    const TInt textOffset =
+        rowHeight / 2 + 6;
 
     for (TInt i = 0; i < count; ++i) {
 
-        const TInt y = KMenuTop + i * rowHeight;
+        const TInt y =
+            KMenuTop + i * rowHeight;
 
         const TUint color =
-            (i == selected) ? KBlue : KPanel;
+            (i == selected)
+            ? KBlue
+            : KPanel;
 
         Fill(
             gc,
@@ -368,12 +605,19 @@ void DrawMenu(
 
         DrawText(
             gc,
-            MenuText(page, i, indonesian),
+            MenuText(
+                page,
+                i,
+                indonesian
+            ),
             15,
-            y + 15,
-            (i == selected) ? KWhite : KMuted
+            y + textOffset,
+            (i == selected)
+            ? KWhite
+            : KMuted
         );
 
+        // Tanda bahasa aktif
         if (
             page == ELanguagePage &&
             i == languageMode
@@ -382,7 +626,21 @@ void DrawMenu(
                 gc,
                 "*",
                 size.iWidth - 18,
-                y + 15,
+                y + textOffset,
+                KWhite
+            );
+        }
+
+        // Tanda font aktif
+        if (
+            page == EFontPage &&
+            i == fontMode
+        ) {
+            DrawText(
+                gc,
+                "*",
+                size.iWidth - 18,
+                y + textOffset,
                 KWhite
             );
         }
@@ -400,13 +658,14 @@ void DrawMenu(
 }
 
 // --------------------------------------------------
-// Aktivasi menu
+// AKTIVASI MENU
 // --------------------------------------------------
 
 void ActivateSelected(
     TInt& page,
     TInt& selected,
     TInt& languageMode,
+    TInt& fontMode,
     TBool& indonesian,
     TBool& running,
     const char*& message
@@ -478,6 +737,16 @@ void ActivateSelected(
                 ? "PILIH BAHASA"
                 : "SELECT LANGUAGE";
 
+        } else if (selected == 1) {
+
+            page = EFontPage;
+            selected = fontMode;
+
+            message =
+                indonesian
+                ? "PILIH UKURAN FONT"
+                : "SELECT FONT SIZE";
+
         } else {
 
             page = EMainPage;
@@ -505,11 +774,14 @@ void ActivateSelected(
             selected = 0;
 
             if (saveError == KErrNone) {
+
                 message =
                     indonesian
                     ? "BAHASA TERSIMPAN"
                     : "LANGUAGE SAVED";
+
             } else {
+
                 message =
                     indonesian
                     ? "GAGAL SIMPAN BAHASA"
@@ -526,11 +798,49 @@ void ActivateSelected(
                 ? "PENGATURAN"
                 : "SETTINGS";
         }
+
+    } else if (page == EFontPage) {
+
+        if (selected <= 2) {
+
+            fontMode = selected;
+
+            const TInt saveError =
+                SaveFontMode(fontMode);
+
+            page = ESettingsPage;
+            selected = 1;
+
+            if (saveError == KErrNone) {
+
+                message =
+                    indonesian
+                    ? "UKURAN FONT TERSIMPAN"
+                    : "FONT SIZE SAVED";
+
+            } else {
+
+                message =
+                    indonesian
+                    ? "GAGAL SIMPAN FONT"
+                    : "FONT SAVE FAILED";
+            }
+
+        } else {
+
+            page = ESettingsPage;
+            selected = 1;
+
+            message =
+                indonesian
+                ? "PENGATURAN"
+                : "SETTINGS";
+        }
     }
 }
 
 // --------------------------------------------------
-// Kembali
+// KEMBALI
 // --------------------------------------------------
 
 void GoBack(
@@ -548,6 +858,11 @@ void GoBack(
         page = ESettingsPage;
         selected = 0;
 
+    } else if (page == EFontPage) {
+
+        page = ESettingsPage;
+        selected = 1;
+
     } else {
 
         page = EMainPage;
@@ -556,7 +871,7 @@ void GoBack(
 }
 
 // --------------------------------------------------
-// Window Server
+// WINDOW SERVER
 // --------------------------------------------------
 
 TInt RunWindowServer()
@@ -585,45 +900,54 @@ TInt RunWindowServer()
                 const TSize size =
                     screen.SizeInPixels();
 
+                // ----------------------------------
+                // MEMUAT PENGATURAN
+                // ----------------------------------
+
+                TInt languageMode =
+                    LoadLanguageMode();
+
+                TInt fontMode =
+                    LoadFontMode();
+
+                TBool indonesian =
+                    IsIndonesian(languageMode);
+
+                // ----------------------------------
+                // MEMUAT FONT
+                // ----------------------------------
+
                 CFont* font = NULL;
 
-                _LIT(KTypeface, "");
-
-                const TFontSpec fontSpec(
-                    KTypeface,
-                    120
+                error = AcquireFont(
+                    screen,
+                    fontMode,
+                    font
                 );
-
-                error =
-                    screen.GetNearestFontToDesignHeightInTwips(
-                        font,
-                        fontSpec
-                    );
 
                 if (error == KErrNone) {
 
                     RWindowGroup group(session);
 
-                    error = group.Construct(1, ETrue);
+                    error = group.Construct(
+                        1,
+                        ETrue
+                    );
 
                     if (error == KErrNone) {
 
                         RWindow window(session);
 
-                        error = window.Construct(group, 2);
+                        error = window.Construct(
+                            group,
+                            2
+                        );
 
                         if (error == KErrNone) {
-
-                            TInt languageMode =
-                                LoadLanguageMode();
-
-                            TBool indonesian =
-                                IsIndonesian(languageMode);
 
                             TInt page = EMainPage;
                             TInt selected = 0;
 
-                            // Baris terakhir yang disentuh
                             TInt lastTappedRow = -1;
 
                             TBool running = ETrue;
@@ -652,17 +976,25 @@ TInt RunWindowServer()
                             window.Invalidate();
                             session.Flush();
 
+                            // ----------------------------------
+                            // EVENT LOOP
+                            // ----------------------------------
+
                             while (running) {
 
                                 User::WaitForAnyRequest();
 
                                 // --------------------------
-                                // Input keyboard dan sentuhan
+                                // INPUT
                                 // --------------------------
 
-                                if (events != KRequestPending) {
+                                if (
+                                    events != KRequestPending
+                                ) {
 
-                                    if (events.Int() != KErrNone) {
+                                    if (
+                                        events.Int() != KErrNone
+                                    ) {
                                         error = events.Int();
                                         break;
                                     }
@@ -679,7 +1011,10 @@ TInt RunWindowServer()
 
                                         TUint key = 0;
 
+                                        // ------------------
                                         // TOUCHSCREEN
+                                        // ------------------
+
                                         if (
                                             event.Type() ==
                                             EEventPointer
@@ -695,8 +1030,10 @@ TInt RunWindowServer()
                                             ) {
 
                                                 const TInt rowHeight =
-                                                    size.iHeight >= 300
-                                                    ? 27 : 22;
+                                                    MenuRowHeight(
+                                                        size,
+                                                        fontMode
+                                                    );
 
                                                 const TInt y =
                                                     pointer->iPosition.iY;
@@ -719,72 +1056,134 @@ TInt RunWindowServer()
 
                                                             // Ketukan kedua
                                                             key = EKeyEnter;
+
                                                             lastTappedRow = -1;
 
                                                         } else {
 
                                                             // Ketukan pertama
                                                             selected = row;
+
                                                             lastTappedRow = row;
 
                                                             window.Invalidate();
                                                         }
 
                                                     } else {
+
                                                         lastTappedRow = -1;
                                                     }
 
                                                 } else {
+
                                                     lastTappedRow = -1;
                                                 }
                                             }
 
                                         } else {
 
+                                            // ------------------
                                             // TOMBOL FISIK
-                                            key = event.Key()->iCode;
+                                            // ------------------
+
+                                            key =
+                                                event.Key()->iCode;
+
                                             lastTappedRow = -1;
                                         }
 
-                                        // NAVIGASI ATAS
-                                        if (key == EKeyUpArrow) {
+                                        // ------------------
+                                        // ATAS
+                                        // ------------------
+
+                                        if (
+                                            key == EKeyUpArrow
+                                        ) {
 
                                             selected =
-                                                (selected +
-                                                MenuCount(page) - 1) %
+                                                (
+                                                    selected +
+                                                    MenuCount(page) - 1
+                                                ) %
                                                 MenuCount(page);
 
                                             window.Invalidate();
 
-                                        // NAVIGASI BAWAH
+                                        // ------------------
+                                        // BAWAH
+                                        // ------------------
+
                                         } else if (
                                             key == EKeyDownArrow
                                         ) {
 
                                             selected =
-                                                (selected + 1) %
+                                                (
+                                                    selected + 1
+                                                ) %
                                                 MenuCount(page);
 
                                             window.Invalidate();
 
-                                        // PILIH MENU
+                                        // ------------------
+                                        // ENTER
+                                        // ------------------
+
                                         } else if (
                                             key == EKeyEnter ||
                                             key == EKeyDevice3
                                         ) {
 
+                                            const TInt oldFontMode =
+                                                fontMode;
+
                                             ActivateSelected(
                                                 page,
                                                 selected,
                                                 languageMode,
+                                                fontMode,
                                                 indonesian,
                                                 running,
                                                 message
                                             );
 
+                                            // Perbarui font jika berubah
+                                            if (
+                                                fontMode != oldFontMode
+                                            ) {
+
+                                                CFont* newFont = NULL;
+
+                                                const TInt fontError =
+                                                    AcquireFont(
+                                                        screen,
+                                                        fontMode,
+                                                        newFont
+                                                    );
+
+                                                if (
+                                                    fontError == KErrNone
+                                                ) {
+
+                                                    screen.ReleaseFont(font);
+
+                                                    font = newFont;
+
+                                                } else {
+
+                                                    message =
+                                                        indonesian
+                                                        ? "GAGAL MEMUAT FONT"
+                                                        : "FONT LOAD FAILED";
+                                                }
+                                            }
+
                                             window.Invalidate();
 
-                                        // KEMBALI
+                                        // ------------------
+                                        // BACK
+                                        // ------------------
+
                                         } else if (
                                             key == EKeyBackspace ||
                                             key == EKeyEscape
@@ -806,12 +1205,16 @@ TInt RunWindowServer()
                                 }
 
                                 // --------------------------
-                                // Redraw
+                                // REDRAW
                                 // --------------------------
 
-                                if (redraws != KRequestPending) {
+                                if (
+                                    redraws != KRequestPending
+                                ) {
 
-                                    if (redraws.Int() != KErrNone) {
+                                    if (
+                                        redraws.Int() != KErrNone
+                                    ) {
                                         error = redraws.Int();
                                         break;
                                     }
@@ -835,6 +1238,7 @@ TInt RunWindowServer()
                                             page,
                                             selected,
                                             languageMode,
+                                            fontMode,
                                             message,
                                             indonesian
                                         );
@@ -853,10 +1257,11 @@ TInt RunWindowServer()
                             }
 
                             // --------------------------
-                            // Cleanup
+                            // CLEANUP EVENT
                             // --------------------------
 
                             session.EventReadyCancel();
+
                             session.RedrawReadyCancel();
 
                             if (events == KRequestPending) {
@@ -887,12 +1292,13 @@ TInt RunWindowServer()
 } // namespace
 
 // --------------------------------------------------
-// Application entry
+// APPLICATION ENTRY
 // --------------------------------------------------
 
 int GuiWindowServerMain()
 {
-    CTrapCleanup* cleanup = CTrapCleanup::New();
+    CTrapCleanup* cleanup =
+        CTrapCleanup::New();
 
     if (cleanup == NULL) {
         return KErrNoMemory;
