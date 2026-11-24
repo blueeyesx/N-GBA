@@ -1,5 +1,5 @@
 
-name: N-GBA - Native GUI v5
+name: N-GBA - Nokia E6 Native GUI
 
 on:
   workflow_dispatch:
@@ -18,18 +18,14 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.target }}
+    name: Build Nokia E6 - Symbian Anna ARMv6
     runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: S60v3-FP1-FP2-ARMv5T
-            architecture: armv5t
-            legacy: true
-
-          - target: Symbian-Anna-ARMv6
+          - target: Nokia-E6-Symbian-Anna-ARMv6
             architecture: armv6
             legacy: false
 
@@ -148,9 +144,6 @@ jobs:
                   "ERROR: GuiWindowServerMain() not found exactly once."
               )
 
-          # The original function uses TRAPD and CTrapCleanup.
-          # This runtime does not provide the required TTrap symbols.
-          # Replace the final function with a direct call.
           prefix = content.split(marker, 1)[0]
 
           replacement = """int GuiWindowServerMain() {
@@ -219,7 +212,7 @@ jobs:
           content = path.read_text()
 
           content, count = re.subn(
-              r'(?m)^(\s*architecture\s*=\s*)"[^"]+"\s*$',
+              r'(?m)^(\s*architecture\s*=\s*)"[^\"]+"\s*$',
               lambda m: m.group(1) + '"' + architecture + '"',
               content,
               count=1
@@ -232,34 +225,6 @@ jobs:
 
           path.write_text(content)
           print(path.read_text())
-          PY
-
-      - name: Enable legacy EKA2 runtime
-        if: matrix.legacy
-        shell: bash
-        run: |
-          set -e
-
-          python - "$PROJECT/CMakeLists.txt" <<'PY'
-          import pathlib
-          import sys
-
-          path = pathlib.Path(sys.argv[1])
-          content = path.read_text()
-
-          marker = "include(SymbianApp)"
-
-          if content.count(marker) != 1:
-              raise SystemExit("CMake marker not found.")
-
-          setting = (
-              'set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL '
-              '"ARMv5T older-ROM EKA2 runtime" FORCE)\n'
-          )
-
-          path.write_text(
-              content.replace(marker, setting + marker, 1)
-          )
           PY
 
       - name: Verify sources
@@ -295,7 +260,7 @@ jobs:
           rm -rf "$PROJECT/.symbian/build"
           rm -rf "$PROJECT/.symbian/package"
 
-      - name: Build N-GBA
+      - name: Build N-GBA for Nokia E6
         shell: bash
         run: |
           set -e
@@ -325,22 +290,6 @@ jobs:
 
           symbian inspect --format e32 "$EXE" \
             | tee "$RUNNER_TEMP/ngba-e32-inspection.txt"
-
-          if [ "${{ matrix.legacy }}" = "true" ]; then
-
-            if grep -Eiq \
-              'Dll: *(libc|libm|libpthread)\.dll' \
-              "$RUNNER_TEMP/ngba-e32-inspection.txt"; then
-              echo "ERROR: Unexpected Open C import."
-              exit 1
-            fi
-
-            grep -Eiq 'Kernel: *eka2' \
-              "$RUNNER_TEMP/ngba-e32-inspection.txt"
-
-            grep -Eiq 'Architecture: *armv5t' \
-              "$RUNNER_TEMP/ngba-e32-inspection.txt"
-          fi
 
       - name: Package SIS
         shell: bash
@@ -378,11 +327,11 @@ jobs:
           symbian inspect --format sis "$SIS" \
             | tee "$RUNNER_TEMP/ngba-sis-inspection.txt"
 
-      - name: Upload N-GBA artifacts
+      - name: Upload N-GBA Nokia E6 artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Native-GUI-v5-${{ matrix.target }}
+          name: N-GBA-Nokia-E6-Symbian-Anna-ARMv6
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/ngba_native_gui/.symbian/build/
