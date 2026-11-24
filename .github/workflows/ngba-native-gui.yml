@@ -12,6 +12,8 @@ on:
       - "src/rom_loader.h"
       - "src/arm7tdmi.cc"
       - "src/arm7tdmi.h"
+      - "src/gba_memory.cc"
+      - "src/gba_memory.h"
       - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
@@ -54,21 +56,17 @@ jobs:
         shell: bash
         run: |
           set -e
-
           curl -fL --retry 3 \
             "https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz" \
             -o "$RUNNER_TEMP/symbian-sdk.tar.gz"
-
           test -s "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
       - name: Install Symbian SDK
         shell: bash
         run: |
           set -e
-
           symbian sdk install "$HOME/dev/symbian-sdk" \
             --archive "$RUNNER_TEMP/symbian-sdk.tar.gz"
-
           symbian toolchain probe
 
       - name: Validate source files
@@ -84,6 +82,8 @@ jobs:
             src/rom_loader.h \
             src/arm7tdmi.cc \
             src/arm7tdmi.h \
+            src/gba_memory.cc \
+            src/gba_memory.h \
             symbian.toml
           do
             test -s "$file" || {
@@ -107,7 +107,6 @@ jobs:
             --non-interactive
 
           test -d "$PROJECT"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Install N-GBA sources
@@ -140,10 +139,16 @@ jobs:
           cp src/arm7tdmi.cc \
             "$PROJECT/src/arm7tdmi.cc"
 
+          cp src/gba_memory.h \
+            "$PROJECT/src/gba_memory.h"
+
+          cp src/gba_memory.cc \
+            "$PROJECT/src/gba_memory.cc"
+
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
-          echo "N-GBA GUI, ROM Loader, and ARM7TDMI sources installed."
+          echo "All N-GBA sources installed."
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -201,6 +206,7 @@ jobs:
               src/window_server.cc
               src/rom_loader.cc
               src/arm7tdmi.cc
+              src/gba_memory.cc
           )
 
           target_link_libraries(
@@ -255,18 +261,22 @@ jobs:
           set -e
 
           test -s "$PROJECT/app.cc"
-          test -s "$PROJECT/window_server.h"
           test -s "$PROJECT/src/window_server.cc"
           test -s "$PROJECT/src/window_server.h"
           test -s "$PROJECT/src/rom_loader.h"
           test -s "$PROJECT/src/rom_loader.cc"
           test -s "$PROJECT/src/arm7tdmi.h"
           test -s "$PROJECT/src/arm7tdmi.cc"
+          test -s "$PROJECT/src/gba_memory.h"
+          test -s "$PROJECT/src/gba_memory.cc"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
           grep -q 'NgbaLoadRom' "$PROJECT/src/rom_loader.cc"
           grep -q 'NgbaCpuReset' "$PROJECT/src/arm7tdmi.cc"
           grep -q 'NgbaCpuStep' "$PROJECT/src/arm7tdmi.cc"
+          grep -q 'NgbaMemoryInit' "$PROJECT/src/gba_memory.cc"
+          grep -q 'NgbaMemoryRead32' "$PROJECT/src/gba_memory.cc"
+          grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
@@ -297,7 +307,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           rm -rf "$PROJECT/.symbian/build"
           rm -rf "$PROJECT/.symbian/package"
 
@@ -312,10 +321,8 @@ jobs:
 
           if [ ! -s "$EXE" ]; then
             echo "ERROR: Executable not generated."
-
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
-
             exit 1
           fi
 
@@ -351,10 +358,8 @@ jobs:
 
           if [ ! -s "$SIS" ]; then
             echo "ERROR: SIS not generated."
-
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
-
             exit 1
           fi
 
