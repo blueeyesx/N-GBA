@@ -10,6 +10,8 @@ on:
       - "src/window_server.h"
       - "src/rom_loader.cc"
       - "src/rom_loader.h"
+      - "src/arm7tdmi.cc"
+      - "src/arm7tdmi.h"
       - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
@@ -80,6 +82,8 @@ jobs:
             src/window_server.h \
             src/rom_loader.cc \
             src/rom_loader.h \
+            src/arm7tdmi.cc \
+            src/arm7tdmi.h \
             symbian.toml
           do
             test -s "$file" || {
@@ -130,10 +134,16 @@ jobs:
           cp src/rom_loader.cc \
             "$PROJECT/src/rom_loader.cc"
 
+          cp src/arm7tdmi.h \
+            "$PROJECT/src/arm7tdmi.h"
+
+          cp src/arm7tdmi.cc \
+            "$PROJECT/src/arm7tdmi.cc"
+
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
-          echo "N-GBA GUI and ROM Loader sources installed."
+          echo "N-GBA GUI, ROM Loader, and ARM7TDMI sources installed."
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -163,8 +173,7 @@ jobs:
 
           path.write_text(prefix + replacement)
 
-          print("Patched GuiWindowServerMain():")
-          print(path.read_text()[-300:])
+          print("Patched GuiWindowServerMain().")
           PY
 
           if grep -nE 'TRAPD|CTrapCleanup|TTrap' \
@@ -191,6 +200,7 @@ jobs:
               ngba_native_gui
               src/window_server.cc
               src/rom_loader.cc
+              src/arm7tdmi.cc
           )
 
           target_link_libraries(
@@ -250,8 +260,13 @@ jobs:
           test -s "$PROJECT/src/window_server.h"
           test -s "$PROJECT/src/rom_loader.h"
           test -s "$PROJECT/src/rom_loader.cc"
+          test -s "$PROJECT/src/arm7tdmi.h"
+          test -s "$PROJECT/src/arm7tdmi.cc"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
+          grep -q 'NgbaLoadRom' "$PROJECT/src/rom_loader.cc"
+          grep -q 'NgbaCpuReset' "$PROJECT/src/arm7tdmi.cc"
+          grep -q 'NgbaCpuStep' "$PROJECT/src/arm7tdmi.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
@@ -264,9 +279,6 @@ jobs:
 
           grep -q 'NgbaReleaseRom' \
             "$PROJECT/src/window_server.cc"
-
-          grep -q 'NgbaLoadRom' \
-            "$PROJECT/src/rom_loader.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
