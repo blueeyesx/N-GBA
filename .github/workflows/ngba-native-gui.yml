@@ -1,5 +1,5 @@
 
-name: N-GBA - Native GUI v5
+name: N-GBA - Native GUI ROM Browser v6
 
 on:
   workflow_dispatch:
@@ -8,6 +8,8 @@ on:
       - "src/app.cc"
       - "src/window_server.cc"
       - "src/window_server.h"
+      - "src/rom_browser.cc"
+      - "src/rom_browser.h"
       - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
@@ -80,6 +82,8 @@ jobs:
             src/app.cc \
             src/window_server.cc \
             src/window_server.h \
+            src/rom_browser.cc \
+            src/rom_browser.h \
             symbian.toml
           do
             test -s "$file" || {
@@ -88,7 +92,7 @@ jobs:
             }
           done
 
-          echo "Source validation passed."
+          echo "All N-GBA source files found."
 
       - name: Initialize Symbian project
         shell: bash
@@ -124,6 +128,12 @@ jobs:
           cp src/window_server.h \
             "$PROJECT/src/window_server.h"
 
+          cp src/rom_browser.cc \
+            "$PROJECT/src/rom_browser.cc"
+
+          cp src/rom_browser.h \
+            "$PROJECT/src/rom_browser.h"
+
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
@@ -148,9 +158,6 @@ jobs:
                   "ERROR: GuiWindowServerMain() not found exactly once."
               )
 
-          # The original function uses TRAPD and CTrapCleanup.
-          # This runtime does not provide the required TTrap symbols.
-          # Replace the final function with a direct call.
           prefix = content.split(marker, 1)[0]
 
           replacement = """int GuiWindowServerMain() {
@@ -160,8 +167,7 @@ jobs:
 
           path.write_text(prefix + replacement)
 
-          print("Patched GuiWindowServerMain():")
-          print(path.read_text()[-300:])
+          print("Patched GuiWindowServerMain().")
           PY
 
           if grep -nE 'TRAPD|CTrapCleanup|TTrap' \
@@ -187,6 +193,7 @@ jobs:
           symbian_add_executable(
               ngba_native_gui
               src/window_server.cc
+              src/rom_browser.cc
           )
 
           target_link_libraries(
@@ -195,6 +202,7 @@ jobs:
               Symbian::Stackless
               Symbian::WindowServer
               Symbian::Gdi
+              Symbian::FileServer
           )
           CMAKE
 
@@ -271,8 +279,12 @@ jobs:
           test -s "$PROJECT/window_server.h"
           test -s "$PROJECT/src/window_server.cc"
           test -s "$PROJECT/src/window_server.h"
+          test -s "$PROJECT/src/rom_browser.cc"
+          test -s "$PROJECT/src/rom_browser.h"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
+          grep -q 'ScanRoms' "$PROJECT/src/window_server.cc"
+          grep -q 'ScanRoms' "$PROJECT/src/rom_browser.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
@@ -382,7 +394,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Native-GUI-v5-${{ matrix.target }}
+          name: N-GBA-ROM-Browser-v6-${{ matrix.target }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/ngba_native_gui/.symbian/build/
