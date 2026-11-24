@@ -9,18 +9,11 @@
 
 namespace {
 
-// --------------------------------------------------
-// JUMLAH MENU
-// --------------------------------------------------
-
 const TInt KMainMenuCount = 7;
 const TInt KSettingsMenuCount = 3;
 const TInt KLanguageMenuCount = 4;
 const TInt KFontMenuCount = 4;
-
-// --------------------------------------------------
-// MODE BAHASA
-// --------------------------------------------------
+const TInt KMaxRoms = 24;
 
 enum TLanguageMode {
     ELanguageAuto = 0,
@@ -28,107 +21,59 @@ enum TLanguageMode {
     ELanguageEnglish = 2
 };
 
-// --------------------------------------------------
-// MODE FONT
-// --------------------------------------------------
-
 enum TFontMode {
     EFontSmall = 0,
     EFontMedium = 1,
     EFontLarge = 2
 };
 
-// --------------------------------------------------
-// HALAMAN
-// --------------------------------------------------
-
 enum TMenuPage {
     EMainPage = 0,
     ESettingsPage,
     ELanguagePage,
-    EFontPage
+    EFontPage,
+    ERomPage
 };
 
-// --------------------------------------------------
-// WARNA
-// --------------------------------------------------
-
 const TUint KBackground = 0x00080D18;
-const TUint KPanel      = 0x00121D30;
-const TUint KBlue       = 0x00308CFF;
-const TUint KWhite      = 0x00FFFFFF;
-const TUint KMuted      = 0x0098A9C2;
+const TUint KPanel = 0x00121D30;
+const TUint KBlue = 0x00308CFF;
+const TUint KWhite = 0x00FFFFFF;
+const TUint KMuted = 0x0098A9C2;
 
 const TInt KMenuTop = 72;
 
-// --------------------------------------------------
-// FILE PENGATURAN
-// --------------------------------------------------
-
 _LIT(KLanguageFolder, "C:\\Data\\N-GBA\\");
-
-_LIT(
-    KLanguageFile,
-    "C:\\Data\\N-GBA\\language.dat"
-);
-
-_LIT(
-    KFontFile,
-    "C:\\Data\\N-GBA\\font.dat"
-);
+_LIT(KLanguageFile, "C:\\Data\\N-GBA\\language.dat");
+_LIT(KFontFile, "C:\\Data\\N-GBA\\font.dat");
+_LIT(KRomFolder, "E:\\GBA\\");
 
 // --------------------------------------------------
-// TINGGI BARIS MENU
+// FONT
 // --------------------------------------------------
 
-TInt MenuRowHeight(
-    const TSize& size,
-    TInt fontMode
-)
+TInt MenuRowHeight(const TSize& size, TInt fontMode)
 {
     if (size.iHeight >= 300) {
-
-        if (fontMode == EFontLarge) {
-            return 42;
-        }
-
-        if (fontMode == EFontMedium) {
-            return 34;
-        }
-
+        if (fontMode == EFontLarge) return 42;
+        if (fontMode == EFontMedium) return 34;
         return 27;
     }
 
-    if (fontMode == EFontLarge) {
-        return 32;
-    }
-
-    if (fontMode == EFontMedium) {
-        return 27;
-    }
-
+    if (fontMode == EFontLarge) return 32;
+    if (fontMode == EFontMedium) return 27;
     return 22;
 }
 
-// --------------------------------------------------
-// UKURAN FONT TWIPS
-// --------------------------------------------------
-
 TInt FontHeight(TInt fontMode)
 {
-    if (fontMode == EFontLarge) {
-        return 200;
-    }
-
-    if (fontMode == EFontMedium) {
-        return 160;
-    }
-
+    if (fontMode == EFontLarge) return 200;
+    if (fontMode == EFontMedium) return 160;
     return 120;
 }
 
 // --------------------------------------------------
-// MEMBACA PENGATURAN SATU BYTE
+// PENGATURAN FILE
 // --------------------------------------------------
 
 TInt LoadByteSetting(
@@ -155,21 +100,13 @@ TInt LoadByteSetting(
     TInt value = defaultValue;
 
     if (error == KErrNone) {
-
         TBuf8<1> data;
-
         error = file.Read(data);
 
-        if (
-            error == KErrNone &&
-            data.Length() > 0
-        ) {
-            const TInt readValue = data[0];
+        if (error == KErrNone && data.Length() > 0) {
+            TInt readValue = data[0];
 
-            if (
-                readValue >= minimum &&
-                readValue <= maximum
-            ) {
+            if (readValue >= minimum && readValue <= maximum) {
                 value = readValue;
             }
         }
@@ -178,18 +115,10 @@ TInt LoadByteSetting(
     }
 
     fs.Close();
-
     return value;
 }
 
-// --------------------------------------------------
-// MENYIMPAN PENGATURAN SATU BYTE
-// --------------------------------------------------
-
-TInt SaveByteSetting(
-    const TDesC& fileName,
-    TInt value
-)
+TInt SaveByteSetting(const TDesC& fileName, TInt value)
 {
     RFs fs;
 
@@ -201,10 +130,7 @@ TInt SaveByteSetting(
 
     error = fs.MkDirAll(KLanguageFolder);
 
-    if (
-        error != KErrNone &&
-        error != KErrAlreadyExists
-    ) {
+    if (error != KErrNone && error != KErrAlreadyExists) {
         fs.Close();
         return error;
     }
@@ -218,20 +144,13 @@ TInt SaveByteSetting(
     );
 
     if (error == KErrNone) {
-
         TBuf8<1> data;
-
-        data.Append(
-            static_cast<TUint8>(value)
-        );
-
+        data.Append(static_cast<TUint8>(value));
         error = file.Write(data);
-
         file.Close();
     }
 
     fs.Close();
-
     return error;
 }
 
@@ -251,27 +170,19 @@ TInt LoadLanguageMode()
 
 TInt SaveLanguageMode(TInt mode)
 {
-    return SaveByteSetting(
-        KLanguageFile,
-        mode
-    );
+    return SaveByteSetting(KLanguageFile, mode);
 }
 
 TBool IsIndonesian(TInt mode)
 {
-    if (mode == ELanguageIndonesian) {
-        return ETrue;
-    }
-
-    if (mode == ELanguageEnglish) {
-        return EFalse;
-    }
+    if (mode == ELanguageIndonesian) return ETrue;
+    if (mode == ELanguageEnglish) return EFalse;
 
     return User::Language() == ELangIndonesian;
 }
 
 // --------------------------------------------------
-// FONT
+// UKURAN FONT
 // --------------------------------------------------
 
 TInt LoadFontMode()
@@ -286,15 +197,8 @@ TInt LoadFontMode()
 
 TInt SaveFontMode(TInt mode)
 {
-    return SaveByteSetting(
-        KFontFile,
-        mode
-    );
+    return SaveByteSetting(KFontFile, mode);
 }
-
-// --------------------------------------------------
-// MENGAMBIL FONT SESUAI UKURAN
-// --------------------------------------------------
 
 TInt AcquireFont(
     CWsScreenDevice& screen,
@@ -316,21 +220,85 @@ TInt AcquireFont(
 }
 
 // --------------------------------------------------
-// JUMLAH ITEM MENU
+// ROM BROWSER
 // --------------------------------------------------
 
-TInt MenuCount(TInt page)
+TInt LoadRomList(TBuf<KMaxFileName>* names)
 {
-    if (page == ESettingsPage) {
-        return KSettingsMenuCount;
+    if (names == NULL) {
+        return KErrArgument;
     }
 
-    if (page == ELanguagePage) {
-        return KLanguageMenuCount;
+    RFs fs;
+
+    TInt error = fs.Connect();
+
+    if (error != KErrNone) {
+        return error;
     }
 
-    if (page == EFontPage) {
-        return KFontMenuCount;
+    CDir* entries = NULL;
+
+    error = fs.GetDir(
+        KRomFolder,
+        KEntryAttNormal,
+        ESortByName,
+        entries
+    );
+
+    TInt count = 0;
+
+    if (error == KErrNone && entries != NULL) {
+        for (TInt i = 0;
+             i < entries->Count() && count < KMaxRoms;
+             ++i) {
+
+            const TEntry& entry = (*entries)[i];
+
+            if (entry.iName.Length() < 4) {
+                continue;
+            }
+
+            if (entry.iName.Right(4).CompareF(_L(".gba")) != 0) {
+                continue;
+            }
+
+            if (entry.iName.Length() > names[count].MaxLength()) {
+                continue;
+            }
+
+            names[count].Copy(entry.iName);
+            ++count;
+        }
+    }
+
+    delete entries;
+    fs.Close();
+
+    if (error == KErrPathNotFound ||
+        error == KErrNotFound) {
+        return KErrPathNotFound;
+    }
+
+    if (error != KErrNone) {
+        return error;
+    }
+
+    return count;
+}
+
+// --------------------------------------------------
+// JUMLAH ITEM
+// --------------------------------------------------
+
+TInt MenuCount(TInt page, TInt romCount)
+{
+    if (page == ESettingsPage) return KSettingsMenuCount;
+    if (page == ELanguagePage) return KLanguageMenuCount;
+    if (page == EFontPage) return KFontMenuCount;
+
+    if (page == ERomPage) {
+        return romCount > 0 ? romCount + 1 : 1;
     }
 
     return KMainMenuCount;
@@ -347,9 +315,7 @@ const char* MenuText(
 )
 {
     if (page == EMainPage) {
-
         if (indonesian) {
-
             static const char* menu[] = {
                 "PUSTAKA GAME",
                 "MUAT ROM",
@@ -359,7 +325,6 @@ const char* MenuText(
                 "TENTANG N-GBA",
                 "KELUAR"
             };
-
             return menu[index];
         }
 
@@ -372,20 +337,16 @@ const char* MenuText(
             "ABOUT N-GBA",
             "EXIT"
         };
-
         return menu[index];
     }
 
     if (page == ESettingsPage) {
-
         if (indonesian) {
-
             static const char* menu[] = {
                 "BAHASA",
                 "UKURAN FONT",
                 "KEMBALI"
             };
-
             return menu[index];
         }
 
@@ -394,21 +355,17 @@ const char* MenuText(
             "FONT SIZE",
             "BACK"
         };
-
         return menu[index];
     }
 
     if (page == ELanguagePage) {
-
         if (indonesian) {
-
             static const char* menu[] = {
                 "OTOMATIS (SISTEM HP)",
                 "BAHASA INDONESIA",
                 "ENGLISH",
                 "KEMBALI"
             };
-
             return menu[index];
         }
 
@@ -418,21 +375,17 @@ const char* MenuText(
             "ENGLISH",
             "BACK"
         };
-
         return menu[index];
     }
 
     if (page == EFontPage) {
-
         if (indonesian) {
-
             static const char* menu[] = {
                 "KECIL",
                 "SEDANG",
                 "BESAR",
                 "KEMBALI"
             };
-
             return menu[index];
         }
 
@@ -442,15 +395,18 @@ const char* MenuText(
             "LARGE",
             "BACK"
         };
-
         return menu[index];
+    }
+
+    if (page == ERomPage) {
+        return indonesian ? "KEMBALI" : "BACK";
     }
 
     return "";
 }
 
 // --------------------------------------------------
-// GRAFIK
+// GAMBAR
 // --------------------------------------------------
 
 void Fill(
@@ -462,31 +418,14 @@ void Fill(
     TUint color
 )
 {
-    gc.SetPenStyle(
-        CGraphicsContext::ENullPen
-    );
-
-    gc.SetBrushStyle(
-        CGraphicsContext::ESolidBrush
-    );
-
-    gc.SetBrushColor(
-        TRgb(color)
-    );
+    gc.SetPenStyle(CGraphicsContext::ENullPen);
+    gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
+    gc.SetBrushColor(TRgb(color));
 
     gc.DrawRect(
-        TRect(
-            x,
-            y,
-            x + width,
-            y + height
-        )
+        TRect(x, y, x + width, y + height)
     );
 }
-
-// --------------------------------------------------
-// MENULIS TEKS
-// --------------------------------------------------
 
 void DrawText(
     CWindowGc& gc,
@@ -497,31 +436,33 @@ void DrawText(
 )
 {
     TUint16 buffer[96];
-
     TInt length = 0;
 
-    while (
-        text[length] != '\0' &&
-        length < 96
-    ) {
-        buffer[length] =
-            static_cast<TUint8>(text[length]);
-
+    while (text[length] != '\0' && length < 96) {
+        buffer[length] = static_cast<TUint8>(text[length]);
         ++length;
     }
 
-    gc.SetPenStyle(
-        CGraphicsContext::ESolidPen
-    );
-
-    gc.SetPenColor(
-        TRgb(color)
-    );
+    gc.SetPenStyle(CGraphicsContext::ESolidPen);
+    gc.SetPenColor(TRgb(color));
 
     gc.DrawText(
         TPtrC16(buffer, length),
         TPoint(x, y)
     );
+}
+
+void DrawRomText(
+    CWindowGc& gc,
+    const TDesC& text,
+    TInt x,
+    TInt y,
+    TUint color
+)
+{
+    gc.SetPenStyle(CGraphicsContext::ESolidPen);
+    gc.SetPenColor(TRgb(color));
+    gc.DrawText(text, TPoint(x, y));
 }
 
 // --------------------------------------------------
@@ -537,62 +478,28 @@ void DrawMenu(
     TInt languageMode,
     TInt fontMode,
     const char* message,
-    TBool indonesian
+    TBool indonesian,
+    TBuf<KMaxFileName>* romNames,
+    TInt romCount
 )
 {
-    Fill(
-        gc,
-        0,
-        0,
-        size.iWidth,
-        size.iHeight,
-        KBackground
-    );
-
-    Fill(
-        gc,
-        0,
-        0,
-        size.iWidth,
-        4,
-        KBlue
-    );
+    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
 
     gc.UseFont(font);
 
-    DrawText(
-        gc,
-        "N-GBA",
-        12,
-        30,
-        KWhite
-    );
+    DrawText(gc, "N-GBA", 12, 30, KWhite);
+    DrawText(gc, "STELLAR DRAGON", 12, 51, KBlue);
 
-    DrawText(
-        gc,
-        "STELLAR DRAGON",
-        12,
-        51,
-        KBlue
-    );
-
-    const TInt count = MenuCount(page);
-
-    const TInt rowHeight =
-        MenuRowHeight(size, fontMode);
-
-    const TInt textOffset =
-        rowHeight / 2 + 6;
+    const TInt count = MenuCount(page, romCount);
+    const TInt rowHeight = MenuRowHeight(size, fontMode);
+    const TInt textOffset = rowHeight / 2 + 6;
 
     for (TInt i = 0; i < count; ++i) {
-
-        const TInt y =
-            KMenuTop + i * rowHeight;
+        const TInt y = KMenuTop + i * rowHeight;
 
         const TUint color =
-            (i == selected)
-            ? KBlue
-            : KPanel;
+            (i == selected) ? KBlue : KPanel;
 
         Fill(
             gc,
@@ -603,46 +510,35 @@ void DrawMenu(
             color
         );
 
-        DrawText(
-            gc,
-            MenuText(
-                page,
-                i,
-                indonesian
-            ),
-            15,
-            y + textOffset,
-            (i == selected)
-            ? KWhite
-            : KMuted
-        );
+        if (page == ERomPage && romCount > 0 && i < romCount) {
+            DrawRomText(
+                gc,
+                romNames[i],
+                15,
+                y + textOffset,
+                (i == selected) ? KWhite : KMuted
+            );
+        } else {
+            const TInt textIndex =
+                page == ERomPage ? 0 : i;
 
-        // Tanda bahasa aktif
-        if (
-            page == ELanguagePage &&
-            i == languageMode
-        ) {
             DrawText(
                 gc,
-                "*",
-                size.iWidth - 18,
+                MenuText(page, textIndex, indonesian),
+                15,
                 y + textOffset,
-                KWhite
+                (i == selected) ? KWhite : KMuted
             );
         }
 
-        // Tanda font aktif
-        if (
-            page == EFontPage &&
-            i == fontMode
-        ) {
-            DrawText(
-                gc,
-                "*",
-                size.iWidth - 18,
-                y + textOffset,
-                KWhite
-            );
+        if (page == ELanguagePage && i == languageMode) {
+            DrawText(gc, "*", size.iWidth - 18,
+                     y + textOffset, KWhite);
+        }
+
+        if (page == EFontPage && i == fontMode) {
+            DrawText(gc, "*", size.iWidth - 18,
+                     y + textOffset, KWhite);
         }
     }
 
@@ -668,54 +564,41 @@ void ActivateSelected(
     TInt& fontMode,
     TBool& indonesian,
     TBool& running,
-    const char*& message
+    const char*& message,
+    TBuf<KMaxFileName>* romNames,
+    TInt romCount
 )
 {
     if (page == EMainPage) {
-
         switch (selected) {
-
             case 0:
-                message =
-                    indonesian
-                    ? "PUSTAKA GAME DIPILIH"
-                    : "GAME LIBRARY SELECTED";
-                break;
-
             case 1:
-                message =
-                    indonesian
-                    ? "MUAT ROM DIPILIH"
-                    : "LOAD ROM SELECTED";
+                page = ERomPage;
+                selected = 0;
                 break;
 
             case 2:
-                message =
-                    indonesian
+                message = indonesian
                     ? "BELUM ADA GAME"
                     : "NO SAVED GAME YET";
                 break;
 
             case 3:
-                message =
-                    indonesian
-                    ? "SAVE STATE DIPILIH"
-                    : "SAVE STATES SELECTED";
+                message = indonesian
+                    ? "SAVE STATE BELUM TERSEDIA"
+                    : "SAVE STATE NOT AVAILABLE";
                 break;
 
             case 4:
                 page = ESettingsPage;
                 selected = 0;
-
-                message =
-                    indonesian
+                message = indonesian
                     ? "PENGATURAN"
                     : "SETTINGS";
                 break;
 
             case 5:
-                message =
-                    indonesian
+                message = indonesian
                     ? "EMULATOR GBA N-GBA"
                     : "N-GBA GBA EMULATOR";
                 break;
@@ -724,85 +607,50 @@ void ActivateSelected(
                 running = EFalse;
                 break;
         }
-
-    } else if (page == ESettingsPage) {
-
+    }
+    else if (page == ESettingsPage) {
         if (selected == 0) {
-
             page = ELanguagePage;
             selected = 0;
-
-            message =
-                indonesian
+            message = indonesian
                 ? "PILIH BAHASA"
                 : "SELECT LANGUAGE";
-
-        } else if (selected == 1) {
-
+        }
+        else if (selected == 1) {
             page = EFontPage;
             selected = fontMode;
-
-            message =
-                indonesian
+            message = indonesian
                 ? "PILIH UKURAN FONT"
                 : "SELECT FONT SIZE";
-
-        } else {
-
+        }
+        else {
             page = EMainPage;
             selected = 4;
-
-            message =
-                indonesian
-                ? "PENGATURAN"
-                : "SETTINGS";
         }
-
-    } else if (page == ELanguagePage) {
-
+    }
+    else if (page == ELanguagePage) {
         if (selected <= 2) {
-
             languageMode = selected;
 
             const TInt saveError =
                 SaveLanguageMode(languageMode);
 
-            indonesian =
-                IsIndonesian(languageMode);
+            indonesian = IsIndonesian(languageMode);
 
             page = ESettingsPage;
             selected = 0;
 
-            if (saveError == KErrNone) {
-
-                message =
-                    indonesian
-                    ? "BAHASA TERSIMPAN"
-                    : "LANGUAGE SAVED";
-
-            } else {
-
-                message =
-                    indonesian
-                    ? "GAGAL SIMPAN BAHASA"
-                    : "LANGUAGE SAVE FAILED";
-            }
-
-        } else {
-
-            page = ESettingsPage;
-            selected = 0;
-
-            message =
-                indonesian
-                ? "PENGATURAN"
-                : "SETTINGS";
+            message = saveError == KErrNone
+                ? (indonesian ? "BAHASA TERSIMPAN" : "LANGUAGE SAVED")
+                : (indonesian ? "GAGAL SIMPAN BAHASA" : "LANGUAGE SAVE FAILED");
         }
-
-    } else if (page == EFontPage) {
-
+        else {
+            page = ESettingsPage;
+            selected = 0;
+        }
+    }
+    else if (page == EFontPage) {
         if (selected <= 2) {
-
             fontMode = selected;
 
             const TInt saveError =
@@ -811,30 +659,27 @@ void ActivateSelected(
             page = ESettingsPage;
             selected = 1;
 
-            if (saveError == KErrNone) {
-
-                message =
-                    indonesian
-                    ? "UKURAN FONT TERSIMPAN"
-                    : "FONT SIZE SAVED";
-
-            } else {
-
-                message =
-                    indonesian
-                    ? "GAGAL SIMPAN FONT"
-                    : "FONT SAVE FAILED";
-            }
-
-        } else {
-
+            message = saveError == KErrNone
+                ? (indonesian ? "UKURAN FONT TERSIMPAN" : "FONT SIZE SAVED")
+                : (indonesian ? "GAGAL SIMPAN FONT" : "FONT SAVE FAILED");
+        }
+        else {
             page = ESettingsPage;
             selected = 1;
-
-            message =
-                indonesian
-                ? "PENGATURAN"
-                : "SETTINGS";
+        }
+    }
+    else if (page == ERomPage) {
+        if (romCount > 0 && selected < romCount) {
+            message = indonesian
+                ? "ROM DIPILIH - CORE BELUM AKTIF"
+                : "ROM SELECTED - CORE NOT READY";
+        }
+        else {
+            page = EMainPage;
+            selected = 0;
+            message = indonesian
+                ? "KEMBALI KE MENU UTAMA"
+                : "RETURN TO MAIN MENU";
         }
     }
 }
@@ -850,21 +695,21 @@ void GoBack(
 )
 {
     if (page == EMainPage) {
-
         running = EFalse;
-
-    } else if (page == ELanguagePage) {
-
+    }
+    else if (page == ELanguagePage) {
         page = ESettingsPage;
         selected = 0;
-
-    } else if (page == EFontPage) {
-
+    }
+    else if (page == EFontPage) {
         page = ESettingsPage;
         selected = 1;
-
-    } else {
-
+    }
+    else if (page == ERomPage) {
+        page = EMainPage;
+        selected = 0;
+    }
+    else {
         page = EMainPage;
         selected = 4;
     }
@@ -890,402 +735,316 @@ TInt RunWindowServer()
         error = screen.Construct();
 
         if (error == KErrNone) {
-
             CWindowGc gc(&screen);
 
             error = gc.Construct();
 
             if (error == KErrNone) {
+                const TSize size = screen.SizeInPixels();
 
-                const TSize size =
-                    screen.SizeInPixels();
-
-                // ----------------------------------
-                // MEMUAT PENGATURAN
-                // ----------------------------------
-
-                TInt languageMode =
-                    LoadLanguageMode();
-
-                TInt fontMode =
-                    LoadFontMode();
+                TInt languageMode = LoadLanguageMode();
+                TInt fontMode = LoadFontMode();
 
                 TBool indonesian =
                     IsIndonesian(languageMode);
 
-                // ----------------------------------
-                // MEMUAT FONT
-                // ----------------------------------
+                TBuf<KMaxFileName>* romNames =
+                    new TBuf<KMaxFileName>[KMaxRoms];
 
-                CFont* font = NULL;
+                if (romNames == NULL) {
+                    error = KErrNoMemory;
+                }
+                else {
+                    TInt romCount = 0;
 
-                error = AcquireFont(
-                    screen,
-                    fontMode,
-                    font
-                );
+                    CFont* font = NULL;
 
-                if (error == KErrNone) {
-
-                    RWindowGroup group(session);
-
-                    error = group.Construct(
-                        1,
-                        ETrue
+                    error = AcquireFont(
+                        screen,
+                        fontMode,
+                        font
                     );
 
                     if (error == KErrNone) {
+                        RWindowGroup group(session);
 
-                        RWindow window(session);
-
-                        error = window.Construct(
-                            group,
-                            2
-                        );
+                        error = group.Construct(1, ETrue);
 
                         if (error == KErrNone) {
+                            RWindow window(session);
 
-                            TInt page = EMainPage;
-                            TInt selected = 0;
+                            error = window.Construct(group, 2);
 
-                            TInt lastTappedRow = -1;
+                            if (error == KErrNone) {
+                                TInt page = EMainPage;
+                                TInt selected = 0;
+                                TInt lastTappedRow = -1;
 
-                            TBool running = ETrue;
+                                TBool running = ETrue;
 
-                            const char* message =
-                                indonesian
-                                ? "ATAS BAWAH PILIH KEMBALI"
-                                : "UP DOWN SELECT BACK";
+                                const char* message =
+                                    indonesian
+                                    ? "ATAS BAWAH PILIH KEMBALI"
+                                    : "UP DOWN SELECT BACK";
 
-                            group.SetOrdinalPosition(0);
+                                group.SetOrdinalPosition(0);
 
-                            window.SetExtent(
-                                TPoint(0, 0),
-                                size
-                            );
+                                window.SetExtent(
+                                    TPoint(0, 0),
+                                    size
+                                );
 
-                            window.SetVisible(ETrue);
-                            window.Activate();
+                                window.SetVisible(ETrue);
+                                window.Activate();
 
-                            TRequestStatus events;
-                            TRequestStatus redraws;
+                                TRequestStatus events;
+                                TRequestStatus redraws;
 
-                            session.EventReady(&events);
-                            session.RedrawReady(&redraws);
+                                session.EventReady(&events);
+                                session.RedrawReady(&redraws);
 
-                            window.Invalidate();
-                            session.Flush();
+                                window.Invalidate();
+                                session.Flush();
 
-                            // ----------------------------------
-                            // EVENT LOOP
-                            // ----------------------------------
+                                while (running) {
+                                    User::WaitForAnyRequest();
 
-                            while (running) {
-
-                                User::WaitForAnyRequest();
-
-                                // --------------------------
-                                // INPUT
-                                // --------------------------
-
-                                if (
-                                    events != KRequestPending
-                                ) {
-
-                                    if (
-                                        events.Int() != KErrNone
-                                    ) {
-                                        error = events.Int();
-                                        break;
-                                    }
-
-                                    TWsEvent event;
-
-                                    session.GetEvent(event);
-
-                                    if (
-                                        event.Type() == EEventKey ||
-                                        event.Type() == EEventKeyDown ||
-                                        event.Type() == EEventPointer
-                                    ) {
-
-                                        TUint key = 0;
-
-                                        // ------------------
-                                        // TOUCHSCREEN
-                                        // ------------------
-
-                                        if (
-                                            event.Type() ==
-                                            EEventPointer
-                                        ) {
-
-                                            const TPointerEvent* pointer =
-                                                event.Pointer();
-
-                                            if (
-                                                pointer != NULL &&
-                                                pointer->iType ==
-                                                TPointerEvent::EButton1Down
-                                            ) {
-
-                                                const TInt rowHeight =
-                                                    MenuRowHeight(
-                                                        size,
-                                                        fontMode
-                                                    );
-
-                                                const TInt y =
-                                                    pointer->iPosition.iY;
-
-                                                if (y >= KMenuTop) {
-
-                                                    const TInt row =
-                                                        (y - KMenuTop) /
-                                                        rowHeight;
-
-                                                    if (
-                                                        row >= 0 &&
-                                                        row < MenuCount(page)
-                                                    ) {
-
-                                                        if (
-                                                            row ==
-                                                            lastTappedRow
-                                                        ) {
-
-                                                            // Ketukan kedua
-                                                            key = EKeyEnter;
-
-                                                            lastTappedRow = -1;
-
-                                                        } else {
-
-                                                            // Ketukan pertama
-                                                            selected = row;
-
-                                                            lastTappedRow = row;
-
-                                                            window.Invalidate();
-                                                        }
-
-                                                    } else {
-
-                                                        lastTappedRow = -1;
-                                                    }
-
-                                                } else {
-
-                                                    lastTappedRow = -1;
-                                                }
-                                            }
-
-                                        } else {
-
-                                            // ------------------
-                                            // TOMBOL FISIK
-                                            // ------------------
-
-                                            key =
-                                                event.Key()->iCode;
-
-                                            lastTappedRow = -1;
+                                    if (events != KRequestPending) {
+                                        if (events.Int() != KErrNone) {
+                                            error = events.Int();
+                                            break;
                                         }
 
-                                        // ------------------
-                                        // ATAS
-                                        // ------------------
+                                        TWsEvent event;
+                                        session.GetEvent(event);
 
                                         if (
-                                            key == EKeyUpArrow
+                                            event.Type() == EEventKey ||
+                                            event.Type() == EEventKeyDown ||
+                                            event.Type() == EEventPointer
                                         ) {
+                                            TUint key = 0;
 
-                                            selected =
-                                                (
-                                                    selected +
-                                                    MenuCount(page) - 1
-                                                ) %
-                                                MenuCount(page);
+                                            if (event.Type() == EEventPointer) {
+                                                const TPointerEvent* pointer =
+                                                    event.Pointer();
 
-                                            window.Invalidate();
+                                                if (
+                                                    pointer != NULL &&
+                                                    pointer->iType ==
+                                                    TPointerEvent::EButton1Down
+                                                ) {
+                                                    const TInt rowHeight =
+                                                        MenuRowHeight(size, fontMode);
 
-                                        // ------------------
-                                        // BAWAH
-                                        // ------------------
+                                                    const TInt y =
+                                                        pointer->iPosition.iY;
 
-                                        } else if (
-                                            key == EKeyDownArrow
-                                        ) {
+                                                    if (y >= KMenuTop) {
+                                                        const TInt row =
+                                                            (y - KMenuTop) /
+                                                            rowHeight;
 
-                                            selected =
-                                                (
-                                                    selected + 1
-                                                ) %
-                                                MenuCount(page);
+                                                        if (
+                                                            row >= 0 &&
+                                                            row < MenuCount(page, romCount)
+                                                        ) {
+                                                            if (row == lastTappedRow) {
+                                                                key = EKeyEnter;
+                                                                lastTappedRow = -1;
+                                                            }
+                                                            else {
+                                                                selected = row;
+                                                                lastTappedRow = row;
+                                                                window.Invalidate();
+                                                            }
+                                                        }
+                                                        else {
+                                                            lastTappedRow = -1;
+                                                        }
+                                                    }
+                                                    else {
+                                                        lastTappedRow = -1;
+                                                    }
+                                                }
+                                            }
+                                            else {
+                                                key = event.Key()->iCode;
+                                                lastTappedRow = -1;
+                                            }
 
-                                            window.Invalidate();
+                                            if (key == EKeyUpArrow) {
+                                                selected =
+                                                    (selected +
+                                                     MenuCount(page, romCount) - 1) %
+                                                    MenuCount(page, romCount);
 
-                                        // ------------------
-                                        // ENTER
-                                        // ------------------
+                                                window.Invalidate();
+                                            }
+                                            else if (key == EKeyDownArrow) {
+                                                selected =
+                                                    (selected + 1) %
+                                                    MenuCount(page, romCount);
 
-                                        } else if (
-                                            key == EKeyEnter ||
-                                            key == EKeyDevice3
-                                        ) {
+                                                window.Invalidate();
+                                            }
+                                            else if (
+                                                key == EKeyEnter ||
+                                                key == EKeyDevice3
+                                            ) {
+                                                const TInt oldPage = page;
+                                                const TInt oldFontMode = fontMode;
 
-                                            const TInt oldFontMode =
-                                                fontMode;
+                                                ActivateSelected(
+                                                    page,
+                                                    selected,
+                                                    languageMode,
+                                                    fontMode,
+                                                    indonesian,
+                                                    running,
+                                                    message,
+                                                    romNames,
+                                                    romCount
+                                                );
 
-                                            ActivateSelected(
+                                                if (
+                                                    page == ERomPage &&
+                                                    oldPage != ERomPage
+                                                ) {
+                                                    const TInt scanResult =
+                                                        LoadRomList(romNames);
+
+                                                    if (scanResult >= 0) {
+                                                        romCount = scanResult;
+
+                                                        if (romCount == 0) {
+                                                            message = indonesian
+                                                                ? "ROM GBA TIDAK DITEMUKAN"
+                                                                : "NO GBA ROM FOUND";
+                                                        }
+                                                        else {
+                                                            message = indonesian
+                                                                ? "PILIH FILE ROM"
+                                                                : "SELECT A ROM FILE";
+                                                        }
+                                                    }
+                                                    else {
+                                                        romCount = 0;
+
+                                                        message = indonesian
+                                                            ? "BUAT FOLDER E:\\GBA"
+                                                            : "CREATE FOLDER E:\\GBA";
+                                                    }
+                                                }
+
+                                                if (fontMode != oldFontMode) {
+                                                    CFont* newFont = NULL;
+
+                                                    const TInt fontError =
+                                                        AcquireFont(
+                                                            screen,
+                                                            fontMode,
+                                                            newFont
+                                                        );
+
+                                                    if (fontError == KErrNone) {
+                                                        screen.ReleaseFont(font);
+                                                        font = newFont;
+                                                    }
+                                                    else {
+                                                        message = indonesian
+                                                            ? "GAGAL MEMUAT FONT"
+                                                            : "FONT LOAD FAILED";
+                                                    }
+                                                }
+
+                                                window.Invalidate();
+                                            }
+                                            else if (
+                                                key == EKeyBackspace ||
+                                                key == EKeyEscape
+                                            ) {
+                                                GoBack(
+                                                    page,
+                                                    selected,
+                                                    running
+                                                );
+
+                                                window.Invalidate();
+                                            }
+                                        }
+
+                                        if (running) {
+                                            session.EventReady(&events);
+                                        }
+                                    }
+
+                                    if (redraws != KRequestPending) {
+                                        if (redraws.Int() != KErrNone) {
+                                            error = redraws.Int();
+                                            break;
+                                        }
+
+                                        TWsRedrawEvent redraw;
+                                        session.GetRedraw(redraw);
+
+                                        if (redraw.Handle() == 2) {
+                                            window.BeginRedraw(redraw.Rect());
+                                            gc.Activate(window);
+
+                                            DrawMenu(
+                                                gc,
+                                                font,
+                                                size,
                                                 page,
                                                 selected,
                                                 languageMode,
                                                 fontMode,
+                                                message,
                                                 indonesian,
-                                                running,
-                                                message
+                                                romNames,
+                                                romCount
                                             );
 
-                                            // Perbarui font jika berubah
-                                            if (
-                                                fontMode != oldFontMode
-                                            ) {
+                                            gc.Deactivate();
+                                            window.EndRedraw();
+                                        }
 
-                                                CFont* newFont = NULL;
-
-                                                const TInt fontError =
-                                                    AcquireFont(
-                                                        screen,
-                                                        fontMode,
-                                                        newFont
-                                                    );
-
-                                                if (
-                                                    fontError == KErrNone
-                                                ) {
-
-                                                    screen.ReleaseFont(font);
-
-                                                    font = newFont;
-
-                                                } else {
-
-                                                    message =
-                                                        indonesian
-                                                        ? "GAGAL MEMUAT FONT"
-                                                        : "FONT LOAD FAILED";
-                                                }
-                                            }
-
-                                            window.Invalidate();
-
-                                        // ------------------
-                                        // BACK
-                                        // ------------------
-
-                                        } else if (
-                                            key == EKeyBackspace ||
-                                            key == EKeyEscape
-                                        ) {
-
-                                            GoBack(
-                                                page,
-                                                selected,
-                                                running
-                                            );
-
-                                            window.Invalidate();
+                                        if (running) {
+                                            session.RedrawReady(&redraws);
                                         }
                                     }
 
-                                    if (running) {
-                                        session.EventReady(&events);
-                                    }
+                                    session.Flush();
                                 }
 
-                                // --------------------------
-                                // REDRAW
-                                // --------------------------
+                                session.EventReadyCancel();
+                                session.RedrawReadyCancel();
 
-                                if (
-                                    redraws != KRequestPending
-                                ) {
-
-                                    if (
-                                        redraws.Int() != KErrNone
-                                    ) {
-                                        error = redraws.Int();
-                                        break;
-                                    }
-
-                                    TWsRedrawEvent redraw;
-
-                                    session.GetRedraw(redraw);
-
-                                    if (redraw.Handle() == 2) {
-
-                                        window.BeginRedraw(
-                                            redraw.Rect()
-                                        );
-
-                                        gc.Activate(window);
-
-                                        DrawMenu(
-                                            gc,
-                                            font,
-                                            size,
-                                            page,
-                                            selected,
-                                            languageMode,
-                                            fontMode,
-                                            message,
-                                            indonesian
-                                        );
-
-                                        gc.Deactivate();
-
-                                        window.EndRedraw();
-                                    }
-
-                                    if (running) {
-                                        session.RedrawReady(&redraws);
-                                    }
+                                if (events == KRequestPending) {
+                                    User::WaitForRequest(events);
                                 }
 
-                                session.Flush();
+                                if (redraws == KRequestPending) {
+                                    User::WaitForRequest(redraws);
+                                }
+
+                                window.Close();
                             }
 
-                            // --------------------------
-                            // CLEANUP EVENT
-                            // --------------------------
-
-                            session.EventReadyCancel();
-
-                            session.RedrawReadyCancel();
-
-                            if (events == KRequestPending) {
-                                User::WaitForRequest(events);
-                            }
-
-                            if (redraws == KRequestPending) {
-                                User::WaitForRequest(redraws);
-                            }
-
-                            window.Close();
+                            group.Close();
                         }
 
-                        group.Close();
+                        screen.ReleaseFont(font);
                     }
 
-                    screen.ReleaseFont(font);
+                    delete[] romNames;
                 }
             }
         }
     }
 
     session.Close();
-
     return error;
 }
 
@@ -1297,8 +1056,7 @@ TInt RunWindowServer()
 
 int GuiWindowServerMain()
 {
-    CTrapCleanup* cleanup =
-        CTrapCleanup::New();
+    CTrapCleanup* cleanup = CTrapCleanup::New();
 
     if (cleanup == NULL) {
         return KErrNoMemory;
@@ -1316,6 +1074,5 @@ int GuiWindowServerMain()
     }
 
     delete cleanup;
-
     return result;
 }
