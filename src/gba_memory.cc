@@ -2,10 +2,10 @@
 #include "gba_memory.h"
 
 #include <e32std.h>
+#include <f32file.h>
 
 namespace
 {
-    // Ukuran wilayah memori GBA.
     const TInt KEwramSize = 0x40000;
     const TInt KIwramSize = 0x8000;
     const TInt KIoSize = 0x400;
@@ -13,6 +13,8 @@ namespace
     const TInt KVramSize = 0x18000;
     const TInt KOamSize = 0x400;
     const TInt KSramSize = 0x10000;
+
+    const TInt KRomCacheSize = 4096;
 
     const TUint32 KEwramBase = 0x02000000u;
     const TUint32 KIwramBase = 0x03000000u;
@@ -31,9 +33,43 @@ namespace
     TUint8 gOam[KOamSize];
     TUint8 gSram[KSramSize];
 
+    // Mode pointer.
     const TUint8* gRom = NULL;
+
+    // Mode file.
+    RFs gRomFs;
+    RFile gRomFile;
+    TBool gRomFileOpen = EFalse;
+
+    // Cache ROM 4 KB.
+    TUint8 gRomCache[KRomCacheSize];
+    TInt gRomCacheStart = -1;
+    TInt gRomCacheLength = 0;
+
     TInt gRomSize = 0;
     TBool gReady = EFalse;
+
+    void CloseRomFile()
+    {
+        if (gRomFileOpen)
+        {
+            gRomFile.Close();
+            gRomFileOpen = EFalse;
+        }
+
+        gRomFs.Close();
+    }
+
+    void ClearMemory()
+    {
+        Mem::FillZ(gEwram, sizeof(gEwram));
+        Mem::FillZ(gIwram, sizeof(gIwram));
+        Mem::FillZ(gIo, sizeof(gIo));
+        Mem::FillZ(gPalette, sizeof(gPalette));
+        Mem::FillZ(gVram, sizeof(gVram));
+        Mem::FillZ(gOam, sizeof(gOam));
+        Mem::FillZ(gSram, sizeof(gSram));
+    }
 
     TUint8 ReadArray(
         const TUint8* aData,
@@ -44,7 +80,9 @@ namespace
         if (aData == NULL || aSize <= 0)
             return 0;
 
-        return aData[aOffset % static_cast<TUint32>(aSize)];
+        return aData[
+            aOffset % static_cast<TUint32>(aSize)
+        ];
     }
 
     void WriteArray(
@@ -57,122 +95,172 @@ namespace
         if (aData == NULL || aSize <= 0)
             return;
 
-        aData[aOffset % static_cast<TUint32>(aSize)] = aValue;
+        aData[
+            aOffset % static_cast<TUint32>(aSize)
+        ] = aValue;
     }
 
-    TUint32 MapVramOffset(TUint32 offset)
+    TUint32 MapVramOffset(TUint32 aOffset)
     {
-        // VRAM memiliki area 96 KB.
-        // Bagian 0x18000-0x1FFFF mencerminkan
-        // bagian 0x10000-0x17FFF.
-        offset &= 0x1FFFFu;
+        aOffset &= 0x1FFFFu;
 
-        if (offset >= 0x18000u)
-            offset -= 0x8000u;
+        if (aOffset >= 0x18000u)
+            aOffset -= 0x8000u;
 
-        return offset;
+        return aOffset;
     }
 
-    TUint8 ReadRom(TUint32 address)
+    TUint8 ReadRom(TUint32 aAddress)
     {
-        if (gRom == NULL || gRomSize <= 0)
+        if (gRomSize <= 0)
             return 0;
 
-        const TUint32 offset = address - KRomBase;
+        const TUint32 offset =
+            aAddress - KRomBase;
 
-        // ROM GBA berada pada beberapa jendela alamat.
-        const TUint32 romOffset =
-            offset % static_cast<TUint32>(gRomSize);
+        const TInt romOffset = static_cast<TInt>(
+            offset % static_cast<TUint32>(gRomSize)
+        );
 
-        return gRom[romOffset];
+        // Mode pointer untuk self-test.
+        if (gRom != NULL)
+            return gRom[romOffset];
+
+        // Mode file-backed.
+        if (!gRomFileOpen)
+            return 0;
+
+        // Periksa apakah alamat berada dalam cache.
+        if (gRomCacheStart >= 0 &&
+            romOffset >= gRomCacheStart &&
+            romOffset < gRomCacheStart + gRomCacheLength)
+        {
+            return gRomCache[
+                romOffset - gRomCacheStart
+            ];
+        }
+
+        // Cache miss: baca blok 4 KB dari file.
+        const TInt blockStart =
+            (romOffset / KRomCacheSize) * KRomCacheSize;
+
+        TInt bytesToRead =
+            gRomSize - blockStart;
+
+        if (bytesToRead > KRomCacheSize)
+            bytesToRead = KRomCacheSize;
+
+        if (bytesToRead <= 0)
+            return 0;
+
+        TPtr8 descriptor(
+            gRomCache,
+            0,
+            KRomCacheSize
+        );
+
+        const TInt error = gRomFile.Read(
+            blockStart,
+            descriptor,
+            bytesToRead
+        );
+
+        if (error != KErrNone)
+        {
+            gRomCacheStart = -1;
+            gRomCacheLength = 0;
+            return 0;
+        }
+
+        gRomCacheStart = blockStart;
+        gRomCacheLength = descriptor.Length();
+
+        const TInt cacheOffset =
+            romOffset - gRomCacheStart;
+
+        if (cacheOffset < 0 ||
+            cacheOffset >= gRomCacheLength)
+            return 0;
+
+        return gRomCache[cacheOffset];
     }
 
-    TUint8 ReadMemoryByte(TUint32 address)
+    TUint8 ReadMemoryByte(TUint32 aAddress)
     {
         if (!gReady)
             return 0;
 
-        // BIOS GBA: 16 KB.
-        // Belum ada image BIOS/HLE.
-        if (address < 0x00004000u)
+        if (aAddress < 0x00004000u)
             return 0;
 
-        // EWRAM: 256 KB.
-        if (address >= KEwramBase &&
-            address < KEwramBase + 0x01000000u)
+        if (aAddress >= KEwramBase &&
+            aAddress < KEwramBase + 0x01000000u)
         {
             return ReadArray(
                 gEwram,
                 KEwramSize,
-                address - KEwramBase
+                aAddress - KEwramBase
             );
         }
 
-        // IWRAM: 32 KB.
-        if (address >= KIwramBase &&
-            address < KIwramBase + 0x01000000u)
+        if (aAddress >= KIwramBase &&
+            aAddress < KIwramBase + 0x01000000u)
         {
             return ReadArray(
                 gIwram,
                 KIwramSize,
-                address - KIwramBase
+                aAddress - KIwramBase
             );
         }
 
-        // I/O registers.
-        if (address >= KIoBase &&
-            address < KIoBase + KIoSize)
+        if (aAddress >= KIoBase &&
+            aAddress < KIoBase + KIoSize)
         {
-            return gIo[address - KIoBase];
+            return gIo[aAddress - KIoBase];
         }
 
-        // Palette RAM.
-        if (address >= KPaletteBase &&
-            address < KPaletteBase + 0x01000000u)
+        if (aAddress >= KPaletteBase &&
+            aAddress < KPaletteBase + 0x01000000u)
         {
             return ReadArray(
                 gPalette,
                 KPaletteSize,
-                address - KPaletteBase
+                aAddress - KPaletteBase
             );
         }
 
-        // Video RAM.
-        if (address >= KVramBase &&
-            address < KVramBase + 0x01000000u)
+        if (aAddress >= KVramBase &&
+            aAddress < KVramBase + 0x01000000u)
         {
             const TUint32 offset =
-                MapVramOffset(address - KVramBase);
+                MapVramOffset(aAddress - KVramBase);
 
             return gVram[offset];
         }
 
-        // OAM.
-        if (address >= KOamBase &&
-            address < KOamBase + 0x01000000u)
+        if (aAddress >= KOamBase &&
+            aAddress < KOamBase + 0x01000000u)
         {
             return ReadArray(
                 gOam,
                 KOamSize,
-                address - KOamBase
+                aAddress - KOamBase
             );
         }
 
-        // Game Pak ROM.
-        if (address >= KRomBase &&
-            address < 0x0E000000u)
+        if (aAddress >= KRomBase &&
+            aAddress < 0x0E000000u)
         {
-            return ReadRom(address);
+            return ReadRom(aAddress);
         }
 
-        // SRAM / Flash area.
-        if (address >= KSramBase &&
-            address < KSramBase + 0x01000000u)
+        if (aAddress >= KSramBase &&
+            aAddress < KSramBase + 0x01000000u)
         {
             return ReadArray(
                 gSram,
                 KSramSize,
-                address - KSramBase
+                aAddress - KSramBase
             );
         }
 
@@ -180,126 +268,175 @@ namespace
     }
 
     void WriteMemoryByte(
-        TUint32 address,
-        TUint8 value
+        TUint32 aAddress,
+        TUint8 aValue
     )
     {
         if (!gReady)
             return;
 
-        // EWRAM.
-        if (address >= KEwramBase &&
-            address < KEwramBase + 0x01000000u)
+        if (aAddress >= KEwramBase &&
+            aAddress < KEwramBase + 0x01000000u)
         {
             WriteArray(
                 gEwram,
                 KEwramSize,
-                address - KEwramBase,
-                value
+                aAddress - KEwramBase,
+                aValue
             );
             return;
         }
 
-        // IWRAM.
-        if (address >= KIwramBase &&
-            address < KIwramBase + 0x01000000u)
+        if (aAddress >= KIwramBase &&
+            aAddress < KIwramBase + 0x01000000u)
         {
             WriteArray(
                 gIwram,
                 KIwramSize,
-                address - KIwramBase,
-                value
+                aAddress - KIwramBase,
+                aValue
             );
             return;
         }
 
-        // I/O registers.
-        if (address >= KIoBase &&
-            address < KIoBase + KIoSize)
+        if (aAddress >= KIoBase &&
+            aAddress < KIoBase + KIoSize)
         {
-            gIo[address - KIoBase] = value;
+            gIo[aAddress - KIoBase] = aValue;
             return;
         }
 
-        // Palette RAM.
-        if (address >= KPaletteBase &&
-            address < KPaletteBase + 0x01000000u)
+        if (aAddress >= KPaletteBase &&
+            aAddress < KPaletteBase + 0x01000000u)
         {
             WriteArray(
                 gPalette,
                 KPaletteSize,
-                address - KPaletteBase,
-                value
+                aAddress - KPaletteBase,
+                aValue
             );
             return;
         }
 
-        // Video RAM.
-        if (address >= KVramBase &&
-            address < KVramBase + 0x01000000u)
+        if (aAddress >= KVramBase &&
+            aAddress < KVramBase + 0x01000000u)
         {
             const TUint32 offset =
-                MapVramOffset(address - KVramBase);
+                MapVramOffset(aAddress - KVramBase);
 
-            gVram[offset] = value;
+            gVram[offset] = aValue;
             return;
         }
 
-        // OAM.
-        if (address >= KOamBase &&
-            address < KOamBase + 0x01000000u)
+        if (aAddress >= KOamBase &&
+            aAddress < KOamBase + 0x01000000u)
         {
             WriteArray(
                 gOam,
                 KOamSize,
-                address - KOamBase,
-                value
+                aAddress - KOamBase,
+                aValue
             );
             return;
         }
 
         // ROM tidak dapat ditulis.
-        if (address >= KRomBase &&
-            address < 0x0E000000u)
-        {
+        if (aAddress >= KRomBase &&
+            aAddress < 0x0E000000u)
             return;
-        }
 
-        // SRAM.
-        if (address >= KSramBase &&
-            address < KSramBase + 0x01000000u)
+        if (aAddress >= KSramBase &&
+            aAddress < KSramBase + 0x01000000u)
         {
             WriteArray(
                 gSram,
                 KSramSize,
-                address - KSramBase,
-                value
+                aAddress - KSramBase,
+                aValue
             );
         }
     }
 }
 
 TInt NgbaMemoryInit(
-    const TUint8* rom,
-    TInt romSize
+    const TUint8* aRom,
+    TInt aRomSize
 )
 {
-    if (rom == NULL || romSize <= 0)
+    if (aRom == NULL || aRomSize <= 0)
         return KErrArgument;
 
-    if (romSize > 32 * 1024 * 1024)
+    if (aRomSize > 32 * 1024 * 1024)
         return KErrTooBig;
 
-    Mem::FillZ(gEwram, sizeof(gEwram));
-    Mem::FillZ(gIwram, sizeof(gIwram));
-    Mem::FillZ(gIo, sizeof(gIo));
-    Mem::FillZ(gPalette, sizeof(gPalette));
-    Mem::FillZ(gVram, sizeof(gVram));
-    Mem::FillZ(gOam, sizeof(gOam));
-    Mem::FillZ(gSram, sizeof(gSram));
+    NgbaMemoryShutdown();
 
-    gRom = rom;
-    gRomSize = romSize;
+    ClearMemory();
+
+    gRom = aRom;
+    gRomSize = aRomSize;
+
+    gRomCacheStart = -1;
+    gRomCacheLength = 0;
+
+    gReady = ETrue;
+
+    return KErrNone;
+}
+
+TInt NgbaMemoryInitFile(
+    const TDesC& aPath,
+    TInt aRomSize
+)
+{
+    if (aRomSize <= 0 ||
+        aRomSize > 32 * 1024 * 1024)
+        return KErrArgument;
+
+    NgbaMemoryShutdown();
+
+    ClearMemory();
+
+    TInt error = gRomFs.Connect();
+
+    if (error != KErrNone)
+        return error;
+
+    error = gRomFile.Open(
+        gRomFs,
+        aPath,
+        EFileRead | EFileShareReadersOnly
+    );
+
+    if (error != KErrNone)
+    {
+        gRomFs.Close();
+        return error;
+    }
+
+    gRomFileOpen = ETrue;
+
+    TInt actualSize = 0;
+
+    error = gRomFile.Size(actualSize);
+
+    if (error != KErrNone ||
+        actualSize != aRomSize)
+    {
+        NgbaMemoryShutdown();
+
+        if (error != KErrNone)
+            return error;
+
+        return KErrCorrupt;
+    }
+
+    gRom = NULL;
+    gRomSize = aRomSize;
+
+    gRomCacheStart = -1;
+    gRomCacheLength = 0;
+
     gReady = ETrue;
 
     return KErrNone;
@@ -308,107 +445,111 @@ TInt NgbaMemoryInit(
 void NgbaMemoryShutdown()
 {
     gReady = EFalse;
+
+    CloseRomFile();
+
     gRom = NULL;
     gRomSize = 0;
 
-    Mem::FillZ(gEwram, sizeof(gEwram));
-    Mem::FillZ(gIwram, sizeof(gIwram));
-    Mem::FillZ(gIo, sizeof(gIo));
-    Mem::FillZ(gPalette, sizeof(gPalette));
-    Mem::FillZ(gVram, sizeof(gVram));
-    Mem::FillZ(gOam, sizeof(gOam));
-    Mem::FillZ(gSram, sizeof(gSram));
+    gRomCacheStart = -1;
+    gRomCacheLength = 0;
+
+    ClearMemory();
 }
 
-TUint8 NgbaMemoryRead8(TUint32 address)
+TUint8 NgbaMemoryRead8(TUint32 aAddress)
 {
-    return ReadMemoryByte(address);
+    return ReadMemoryByte(aAddress);
 }
 
-TUint16 NgbaMemoryRead16(TUint32 address)
+TUint16 NgbaMemoryRead16(TUint32 aAddress)
 {
-    address &= ~1u;
+    aAddress &= ~1u;
 
-    const TUint16 low =
-        static_cast<TUint16>(ReadMemoryByte(address));
+    const TUint16 b0 =
+        ReadMemoryByte(aAddress);
 
-    const TUint16 high =
-        static_cast<TUint16>(
-            ReadMemoryByte(address + 1)
-        );
+    const TUint16 b1 =
+        ReadMemoryByte(aAddress + 1);
 
     return static_cast<TUint16>(
-        low | (high << 8)
+        b0 | (b1 << 8)
     );
 }
 
-TUint32 NgbaMemoryRead32(TUint32 address)
+TUint32 NgbaMemoryRead32(TUint32 aAddress)
 {
-    address &= ~3u;
+    aAddress &= ~3u;
 
-    const TUint32 b0 = ReadMemoryByte(address);
-    const TUint32 b1 = ReadMemoryByte(address + 1);
-    const TUint32 b2 = ReadMemoryByte(address + 2);
-    const TUint32 b3 = ReadMemoryByte(address + 3);
+    const TUint32 b0 =
+        ReadMemoryByte(aAddress);
 
-    return
-        b0 |
+    const TUint32 b1 =
+        ReadMemoryByte(aAddress + 1);
+
+    const TUint32 b2 =
+        ReadMemoryByte(aAddress + 2);
+
+    const TUint32 b3 =
+        ReadMemoryByte(aAddress + 3);
+
+    return b0 |
         (b1 << 8) |
         (b2 << 16) |
         (b3 << 24);
 }
 
 void NgbaMemoryWrite8(
-    TUint32 address,
-    TUint8 value
+    TUint32 aAddress,
+    TUint8 aValue
 )
 {
-    WriteMemoryByte(address, value);
+    WriteMemoryByte(aAddress, aValue);
 }
 
 void NgbaMemoryWrite16(
-    TUint32 address,
-    TUint16 value
+    TUint32 aAddress,
+    TUint16 aValue
 )
 {
-    address &= ~1u;
+    aAddress &= ~1u;
 
     WriteMemoryByte(
-        address,
-        static_cast<TUint8>(value & 0xFF)
+        aAddress,
+        static_cast<TUint8>(aValue)
     );
 
     WriteMemoryByte(
-        address + 1,
-        static_cast<TUint8>((value >> 8) & 0xFF)
+        aAddress + 1,
+        static_cast<TUint8>(aValue >> 8)
     );
 }
 
 void NgbaMemoryWrite32(
-    TUint32 address,
-    TUint32 value
+    TUint32 aAddress,
+    TUint32 aValue
 )
 {
-    address &= ~3u;
+    aAddress &= ~3u;
 
     WriteMemoryByte(
-        address,
-        static_cast<TUint8>(value & 0xFF)
+        aAddress,
+        static_cast<TUint8>(aValue)
     );
 
     WriteMemoryByte(
-        address + 1,
-        static_cast<TUint8>((value >> 8) & 0xFF)
+        aAddress + 1,
+        static_cast<TUint8>(aValue >> 8)
     );
 
     WriteMemoryByte(
-        address + 2,
-        static_cast<TUint8>((value >> 16) & 0xFF)
+        aAddress + 2,
+        static_cast<TUint8>(aValue >> 16)
     );
 
     WriteMemoryByte(
-        address + 3,
-        static_cast<TUint8>((value >> 24) & 0xFF)
+        aAddress + 3,
+        static_cast<TUint8>(aValue >> 24)
     );
 }
 
