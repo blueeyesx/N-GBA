@@ -101,35 +101,14 @@ void LogMessage(const TDesC& message)
         if (error == KErrNone) {
             TBuf8<512> line;
 
-            // Waktu pencatatan.
-            TTime now;
-            now.HomeTime();
-
-            TBuf<32> timeText;
-            now.Format(
-                timeText,
-                _L("%F%Y-%M-%D %H:%T:%S")
-            );
+            line.Append(_L8("N-GBA | "));
 
             for (
                 TInt i = 0;
-                i < timeText.Length() && line.Length() < 100;
+                i < message.Length() && line.Length() < 500;
                 ++i
             ) {
-                line.Append(
-                    static_cast<TUint8>(timeText[i])
-                );
-            }
-
-            line.Append(_L8(" | "));
-
-            // Isi pesan.
-            for (
-                TInt j = 0;
-                j < message.Length() && line.Length() < 500;
-                ++j
-            ) {
-                const TUint16 character = message[j];
+                const TUint16 character = message[i];
 
                 line.Append(
                     character <= 255
@@ -891,7 +870,6 @@ void DrawLogPage(
     TBuf<512> logText;
     ReadLogFile(logText);
 
-    // Cari posisi awal lima baris paling akhir.
     TInt starts[5];
     TInt lengths[5];
 
@@ -962,7 +940,6 @@ void DrawLogPage(
         }
     }
 
-    // Dua tombol di bagian bawah.
     const TInt rowHeight = MenuRowHeight(size, fontMode);
 
     for (TInt i = 0; i < KLogMenuCount; ++i) {
