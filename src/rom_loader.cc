@@ -1,6 +1,7 @@
 
 #include "rom_loader.h"
 #include "gba_memory.h"
+#include "cpu_selftest.h"
 
 #include <e32base.h>
 #include <e32std.h>
@@ -40,7 +41,6 @@ namespace
 
 void NgbaReleaseRom()
 {
-    // Putuskan hubungan Memory Bus sebelum ROM dilepas.
     NgbaMemoryShutdown();
 
     delete[] gRomData;
@@ -148,8 +148,21 @@ TInt NgbaLoadRom(
 
     gGameCode.Copy(buffer + 0xAC, 4);
 
-    // Hubungkan ROM ke GBA Memory Bus.
+    // Hubungkan ROM game ke Memory Bus.
     error = NgbaMemoryInit(
+        gRomData,
+        gRomSize
+    );
+
+    if (error != KErrNone)
+    {
+        NgbaReleaseRom();
+        return error;
+    }
+
+    // Uji CPU dan RAM dengan program ARM buatan sendiri.
+    // Fungsi ini mengembalikan Memory Bus ke ROM game.
+    error = NgbaCpuRunSelfTests(
         gRomData,
         gRomSize
     );
