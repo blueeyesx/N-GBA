@@ -1,0 +1,76 @@
+
+name: N-GBA ARMv5T SIS Pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-sis:
+    name: Build ARMv5T and Package SIS
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install symbian-platform
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install symbian-platform==0.3.0
+
+      - name: Download Symbian SDK
+        run: |
+          curl -fL --retry 3 \
+            https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz \
+            -o symbian-sdk.tar.gz
+
+      - name: Install SDK
+        run: |
+          source .venv/bin/activate
+          symbian sdk install "$RUNNER_TEMP/symbian-sdk" \
+            --archive "$GITHUB_WORKSPACE/symbian-sdk.tar.gz"
+
+      - name: Generate ARMv5T application
+        run: |
+          source .venv/bin/activate
+          symbian init "$RUNNER_TEMP/ngba-sdk-smoke" \
+            --name ngba_smoke \
+            --architecture armv5t \
+            --non-interactive
+
+      - name: Build E32
+        run: |
+          source .venv/bin/activate
+          symbian app build \
+            --project "$RUNNER_TEMP/ngba-sdk-smoke"
+
+          symbian inspect --format e32 \
+            "$RUNNER_TEMP/ngba-sdk-smoke/.symbian/build/ngba_smoke.exe"
+
+      - name: Package SIS
+        run: |
+          source .venv/bin/activate
+          symbian package \
+            --project "$RUNNER_TEMP/ngba-sdk-smoke" \
+            --artifact "$RUNNER_TEMP/ngba-sdk-smoke/.symbian/build/ngba_smoke.exe" \
+            --output "$RUNNER_TEMP/ngba-sdk-smoke/.symbian/package"
+
+          symbian inspect --format sis \
+            "$RUNNER_TEMP/ngba-sdk-smoke/.symbian/package/ngba_smoke.sis"
+
+      - name: Upload SIS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: N-GBA-ARMv5T-SIS-SDK-Smoke-Test
+          path: |
+            ${{ runner.temp }}/ngba-sdk-smoke/.symbian/package/ngba_smoke.sis
+            ${{ runner.temp }}/ngba-sdk-smoke/.symbian/build/ngba_smoke.exe
+          if-no-files-found: error
+          retention-days: 14
