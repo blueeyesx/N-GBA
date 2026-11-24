@@ -6,15 +6,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - '**.cpp'
-      - '**.cc'
-      - '**.h'
-      - '**.hpp'
-      - '**.cmake'
-      - 'CMakeLists.txt'
-      - 'symbian.toml'
-      - '.github/workflows/build-symbian-sis.yml'
 
 permissions:
   contents: read
@@ -26,95 +17,118 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout N-GBA source
+      # 1. Download source N-GBA
+      - name: Checkout N-GBA
         uses: actions/checkout@v4
 
-      - name: Install Python
+      # 2. Install Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
-      - name: Install Symbian platform tools
+      # 3. Install dependencies
+      - name: Install dependencies
+        shell: bash
         run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            curl \
+            wget \
+            tar \
+            gzip \
+            cmake \
+            ninja-build \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            zlib1g-dev
+
           python -m pip install --upgrade pip
-          python -m pip install symbian-platform==0.3.0
+          python -m pip install symbian-platform
+
+      # 4. Check Symbian CLI
+      - name: Check Symbian platform
+        shell: bash
+        run: |
+          set -euo pipefail
+
           symbian --help
           symbian doctor
 
-      - name: Download Symbian ARM SDK
+      # 5. Check source files
+      - name: Check N-GBA source
         shell: bash
         run: |
           set -euo pipefail
 
-          SDK_VERSION="0.3.0"
-          SDK_ARCHIVE="symbian-sdk-${SDK_VERSION}-linux-x86_64.tar.gz"
-          SDK_URL="https://github.com/hpnkv/symbian-platform/releases/download/v${SDK_VERSION}/${SDK_ARCHIVE}"
-
-          curl -fL "$SDK_URL" -o "$RUNNER_TEMP/$SDK_ARCHIVE"
-
-          mkdir -p "$RUNNER_TEMP/symbian-sdk"
-          symbian sdk install \
-            "$RUNNER_TEMP/symbian-sdk" \
-            --archive "$RUNNER_TEMP/$SDK_ARCHIVE"
-
-          echo "SYMBIAN_SDK=$RUNNER_TEMP/symbian-sdk" >> "$GITHUB_ENV"
-
-      - name: Verify project configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Project directory:"
+          echo "Repository:"
           pwd
 
-          test -f CMakeLists.txt || {
-            echo "::error::CMakeLists.txt not found in repository root"
+          echo "Files:"
+          ls -la
+
+          if [ ! -f CMakeLists.txt ]; then
+            echo "::error::CMakeLists.txt not found"
             exit 1
-          }
+          fi
 
-          test -f symbian.toml || {
-            echo "::error::symbian.toml not found. Symbian package metadata is required."
+          if [ ! -f symbian.toml ]; then
+            echo "::error::symbian.toml not found"
             exit 1
-          }
+          fi
 
-          echo "Project configuration:"
-          cat symbian.toml
+      # 6. Check SDK installation command
+      - name: Check SDK commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          symbian sdk --help
+          symbian app --help
+          symbian package --help
 
-      - name: Build ARM Symbian application
+      # 7. Build application
+      - name: Build N-GBA
         shell: bash
         run: |
           set -euo pipefail
 
           symbian toolchain probe
-          symbian app build --project "$GITHUB_WORKSPACE"
 
-      - name: Locate E32 executable
-        id: e32
+          symbian app build \
+            --project "$GITHUB_WORKSPACE"
+
+      # 8. Locate generated E32 executable
+      - name: Find E32 executable
+        id: find-e32
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "Searching for E32 executable..."
+
+          find . -type f -name '*.exe' -print
+
           mapfile -t FILES < <(
-            find .symbian -type f -name '*.exe' \
-              ! -name '*-signed.exe' | sort
+            find .symbian -type f -name '*.exe' | sort
           )
 
           if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "::error::No E32 executable found in .symbian"
-            find .symbian -maxdepth 5 -type f || true
+            echo "::error::No E32 executable generated"
             exit 1
           fi
 
-          echo "Found E32 files:"
-          printf '%s\n' "${FILES[@]}"
+          E32="${FILES[0]}"
 
-          E32_FILE="${FILES[0]}"
-          echo "file=$E32_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found: $E32"
+          echo "file=$E32" >> "$GITHUB_OUTPUT"
 
-          symbian inspect --format e32 "$E32_FILE"
+          symbian inspect --format e32 "$E32"
 
-      - name: Create SIS installer
+      # 9. Generate SIS package
+      - name: Generate SIS package
         shell: bash
         run: |
           set -euo pipefail
@@ -123,37 +137,40 @@ jobs:
 
           symbian package \
             --project "$GITHUB_WORKSPACE" \
-            --artifact "${{ steps.e32.outputs.file }}" \
+            --artifact "${{ steps.find-e32.outputs.file }}" \
             --output "$GITHUB_WORKSPACE/.symbian/package"
 
-          echo "Package output:"
-          find .symbian/package -maxdepth 2 -type f -print
+          echo "Generated packages:"
+          find .symbian/package -type f -print
 
-      - name: Validate SIS installer
+      # 10. Verify SIS package
+      - name: Verify SIS package
         shell: bash
         run: |
           set -euo pipefail
 
           mapfile -t SIS_FILES < <(
-            find .symbian/package -maxdepth 2 -type f -name '*.sis' | sort
+            find .symbian/package -type f -name '*.sis' | sort
           )
 
           if [ "${#SIS_FILES[@]}" -eq 0 ]; then
-            echo "::error::SIS package was not generated"
+            echo "::error::No SIS package generated"
             exit 1
           fi
 
           for SIS in "${SIS_FILES[@]}"; do
-            echo "Checking: $SIS"
+            echo "Inspecting $SIS"
             symbian inspect --format sis "$SIS"
           done
 
-      - name: Upload SIS/SISX artifacts
+      # 11. Upload SIS/SISX artifacts
+      - name: Upload SIS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Symbian-SISX
+          name: N-GBA-Symbian-SIS-SISX
           path: |
             .symbian/package/*.sis
-            .symbian/package/package-report.json
+            .symbian/package/*.sisx
+            .symbian/package/*.json
           if-no-files-found: error
           retention-days: 30
