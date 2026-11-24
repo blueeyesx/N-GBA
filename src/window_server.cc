@@ -17,7 +17,6 @@ const TInt KLanguageMenuCount = 4;
 const TInt KFontMenuCount = 4;
 const TInt KMaxRoms = 24;
 
-// Eksekusi CPU dibatasi agar GUI tetap responsif.
 const TInt KCpuInstructionsPerTick = 100;
 const TInt KCpuTimerInterval = 16000;
 
@@ -309,49 +308,72 @@ void FormatHex8(TUint32 value, char* output)
     output[8] = '\0';
 }
 
+void AppendDiagnosticText(
+    char* output,
+    TInt& position,
+    const char* text
+)
+{
+    while (*text != '\0') {
+        output[position++] = *text++;
+    }
+}
+
+void AppendDiagnosticHex(
+    char* output,
+    TInt& position,
+    TUint32 value
+)
+{
+    char hex[9];
+    FormatHex8(value, hex);
+
+    for (TInt i = 0; i < 8; ++i) {
+        output[position++] = hex[i];
+    }
+}
+
 void FormatCpuDiagnostic(
     const TNgbaCpuState& cpu,
     char* output
 )
 {
-    char pc[9];
-    char opcode[9];
-
-    FormatHex8(cpu.lastAddress, pc);
-    FormatHex8(cpu.lastOpcode, opcode);
-
-    const char* mode =
-        cpu.lastInstructionSize == 2
-        ? "THUMB"
-        : "ARM";
-
     TInt position = 0;
 
-    const char* prefix = "PC:";
+    // Baris 1: PC, opcode, dan mode CPU.
+    AppendDiagnosticText(output, position, "PC:");
+    AppendDiagnosticHex(output, position, cpu.lastAddress);
 
-    while (*prefix) {
-        output[position++] = *prefix++;
-    }
+    AppendDiagnosticText(output, position, " OP:");
+    AppendDiagnosticHex(output, position, cpu.lastOpcode);
 
-    for (TInt i = 0; i < 8; ++i) {
-        output[position++] = pc[i];
-    }
+    AppendDiagnosticText(
+        output,
+        position,
+        cpu.lastInstructionSize == 2 ? " THUMB\n" : " ARM\n"
+    );
 
-    const char* middle = " OP:";
+    // Baris 2: R0 dan R1.
+    AppendDiagnosticText(output, position, "R0:");
+    AppendDiagnosticHex(output, position, cpu.r[0]);
 
-    while (*middle) {
-        output[position++] = *middle++;
-    }
+    AppendDiagnosticText(output, position, " R1:");
+    AppendDiagnosticHex(output, position, cpu.r[1]);
 
-    for (TInt i = 0; i < 8; ++i) {
-        output[position++] = opcode[i];
-    }
+    output[position++] = '\n';
 
-    output[position++] = ' ';
+    // Baris 3: R2 dan R3.
+    AppendDiagnosticText(output, position, "R2:");
+    AppendDiagnosticHex(output, position, cpu.r[2]);
 
-    while (*mode) {
-        output[position++] = *mode++;
-    }
+    AppendDiagnosticText(output, position, " R3:");
+    AppendDiagnosticHex(output, position, cpu.r[3]);
+
+    output[position++] = '\n';
+
+    // Baris 4: CPSR.
+    AppendDiagnosticText(output, position, "CPSR:");
+    AppendDiagnosticHex(output, position, cpu.cpsr);
 
     output[position] = '\0';
 }
@@ -552,6 +574,62 @@ void DrawRomText(
 }
 
 // --------------------------------------------------
+// GAMBAR DIAGNOSTIK CPU
+// --------------------------------------------------
+
+void DrawCpuDiagnostic(
+    CWindowGc& gc,
+    const char* diagnostic,
+    TInt x,
+    TInt y
+)
+{
+    if (diagnostic == NULL || diagnostic[0] == '\0') {
+        return;
+    }
+
+    char line[96];
+    TInt lineLength = 0;
+    TInt lineNumber = 0;
+
+    const TInt lineHeight = 16;
+
+    while (*diagnostic != '\0' && lineNumber < 4) {
+        if (*diagnostic == '\n') {
+            line[lineLength] = '\0';
+
+            DrawText(
+                gc,
+                line,
+                x,
+                y + lineNumber * lineHeight,
+                KWhite
+            );
+
+            ++lineNumber;
+            lineLength = 0;
+        }
+        else if (lineLength < 95) {
+            line[lineLength++] = *diagnostic;
+        }
+
+        ++diagnostic;
+    }
+
+    if (lineLength > 0 && lineNumber < 4) {
+        line[lineLength] = '\0';
+
+        DrawText(
+            gc,
+            line,
+            x,
+            y + lineNumber * lineHeight,
+            KWhite
+        );
+    }
+}
+
+// --------------------------------------------------
 // MENGGAMBAR MENU
 // --------------------------------------------------
 
@@ -639,14 +717,13 @@ void DrawMenu(
         }
     }
 
-    // Informasi alamat PC dan opcode saat CPU berhenti.
+    // Diagnostik CPU ketika instruksi tidak didukung.
     if (diagnostic != NULL && diagnostic[0] != '\0') {
-        DrawText(
+        DrawCpuDiagnostic(
             gc,
             diagnostic,
             8,
-            size.iHeight - 30,
-            KWhite
+            size.iHeight - 78
         );
     }
 
@@ -785,7 +862,6 @@ void ActivateSelected(
     else if (page == ERomPage) {
         if (romCount > 0 && selected < romCount) {
 
-            // Hentikan eksekusi ROM sebelumnya sebelum memuat ROM baru.
             StopCpuTimer(
                 cpuTimer,
                 cpuTimerStatus,
@@ -956,8 +1032,8 @@ TInt RunWindowServer()
                                     ? "ATAS BAWAH PILIH KEMBALI"
                                     : "UP DOWN SELECT BACK";
 
-                                // Informasi diagnostik CPU.
-                                char diagnostic[64];
+                                // Buffer diagnostik CPU.
+                                char diagnostic[192];
                                 diagnostic[0] = '\0';
 
                                 // Status CPU.
@@ -1107,8 +1183,6 @@ TInt RunWindowServer()
                                                     timerReady
                                                 );
 
-                                                // Reset diagnostik setiap kali
-                                                // memilih ROM baru.
                                                 if (
                                                     oldPage == ERomPage &&
                                                     page == ERomPage &&
@@ -1180,7 +1254,6 @@ TInt RunWindowServer()
                                                     running
                                                 );
 
-                                                // CPU tidak berjalan di menu utama.
                                                 if (page != ERomPage && cpuActive) {
                                                     StopCpuTimer(
                                                         cpuTimer,
@@ -1229,8 +1302,6 @@ TInt RunWindowServer()
                                             ) {
                                                 stepResult = NgbaCpuStep(cpu);
 
-                                                // Jangan mengulang instruksi
-                                                // yang belum didukung.
                                                 if (stepResult != ENgbaCpuOk) {
                                                     break;
                                                 }
@@ -1263,7 +1334,6 @@ TInt RunWindowServer()
                                                 window.Invalidate();
                                             }
                                             else {
-                                                // Jadwalkan tick berikutnya.
                                                 cpuTimer.After(
                                                     cpuTimerStatus,
                                                     TTimeIntervalMicroSeconds32(
@@ -1362,7 +1432,6 @@ TInt RunWindowServer()
         }
     }
 
-    // Bebaskan ROM yang sudah dimuat sebelum aplikasi ditutup.
     NgbaReleaseRom();
 
     session.Close();
