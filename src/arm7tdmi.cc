@@ -81,14 +81,13 @@ namespace
                (value << (32 - amount));
     }
 
-    // ARM7TDMI word load:
-    // alamat disejajarkan ke 4 byte, kemudian hasil dirotasi
-    // berdasarkan dua bit alamat terbawah.
+    // ARM7TDMI word load.
     TUint32 ReadWordRotated(TUint32 address)
     {
         const TUint32 alignedAddress = address & ~3u;
         const TUint32 value = NgbaMemoryRead32(alignedAddress);
-        const TInt rotation = static_cast<TInt>(address & 3u) * 8;
+        const TInt rotation =
+            static_cast<TInt>(address & 3u) * 8;
 
         return RotateRight(value, rotation);
     }
@@ -162,9 +161,6 @@ namespace
         return RotateRight(value, amount);
     }
 
-    // carryIn:
-    // - operasi tambah: carry yang masuk (ADC)
-    // - operasi kurang: borrow yang masuk (SBC/RSC)
     void SetArithmeticFlags(
         TNgbaCpuState& cpu,
         TUint32 left,
@@ -277,15 +273,14 @@ namespace
         return ShiftValue(value, type, amount, carry);
     }
 
-    // BIOS HLE SWI 01h: RegisterRamReset.
-    // BIOS asli memiliki perilaku reset memori yang lebih lengkap.
+    // BIOS SWI 01h: RegisterRamReset.
     TInt ExecuteBiosRegisterRamReset(TNgbaCpuState& cpu)
     {
         NgbaMemoryRegisterRamReset(cpu.r[0]);
         return ENgbaCpuOk;
     }
 
-    // BIOS HLE SWI 0Bh: CpuSet.
+    // BIOS SWI 0Bh: CpuSet.
     TInt ExecuteBiosCpuSet(TNgbaCpuState& cpu)
     {
         const TUint32 source = cpu.r[0];
@@ -352,7 +347,7 @@ namespace
         return ENgbaCpuOk;
     }
 
-    // BIOS HLE SWI 0Ch: CpuFastSet.
+    // BIOS SWI 0Ch: CpuFastSet.
     TInt ExecuteBiosCpuFastSet(TNgbaCpuState& cpu)
     {
         TUint32 source = cpu.r[0] & ~3u;
@@ -364,7 +359,6 @@ namespace
 
         TUint32 count = control & 0x001FFFFFu;
 
-        // CpuFastSet mentransfer dalam blok 8 word.
         count = (count + 7u) & ~7u;
 
         if (count == 0)
@@ -610,11 +604,11 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
-        // Nomor SWI berada pada 24 bit terbawah.
+        // Nomor SWI ARM berada pada bit 16-23.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
-                instruction & 0x00FFFFFFu;
+                (instruction >> 16) & 0xFFu;
 
             if (swiNumber == 0x01u)
                 return ExecuteBiosRegisterRamReset(cpu);
@@ -1475,14 +1469,10 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     for (TInt i = 0; i < 16; ++i)
         cpu.r[i] = 0;
 
-    // Mulai langsung dari entry point cartridge.
     cpu.r[15] = KRomBase;
-
-    // Stack awal di IWRAM.
     cpu.r[13] = 0x03007F00u;
 
     // System mode, ARM state, IRQ dan FIQ dinonaktifkan.
-    // Ini merupakan inisialisasi HLE sederhana, bukan boot BIOS asli.
     cpu.cpsr = 0x000000DFu;
 
     cpu.halted = EFalse;
