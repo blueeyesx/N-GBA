@@ -19,13 +19,11 @@ enum TNgbaCpuResult
     ENgbaCpuUnsupported = -3
 };
 
+// Mengatur CPU ke keadaan awal.
 void NgbaCpuReset(TNgbaCpuState& aCpu);
 
-TInt NgbaCpuStep(
-    TNgbaCpuState& aCpu,
-    const TUint8* aRom,
-    TInt aRomSize
-);
+// Menjalankan satu instruksi ARM melalui Memory Bus.
+TInt NgbaCpuStep(TNgbaCpuState& aCpu);
 
 TUint32 NgbaCpuGetRegister(
     const TNgbaCpuState& aCpu,
