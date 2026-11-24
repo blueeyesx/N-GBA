@@ -1,4 +1,3 @@
-
 #include "arm7tdmi.h"
 #include "gba_memory.h"
 
@@ -478,9 +477,20 @@ namespace
             return ENgbaCpuOk;
         }
 
-        // SWI is deliberately not emulated yet.
+        // BIOS SWI - ARM mode.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
+        {
+            const TUint32 swiNumber =
+                (instruction >> 16) & 0xFFu;
+
+            if (swiNumber == 0x01u)
+            {
+                NgbaMemoryRegisterRamReset(cpu.r[0]);
+                return ENgbaCpuOk;
+            }
+
             return ENgbaCpuUnsupported;
+        }
 
         // Multiply / Multiply Accumulate.
         if ((instruction & 0x0FC000F0u) == 0x00000090u)
@@ -696,7 +706,9 @@ namespace
     )
     {
         // LSL / LSR / ASR immediate.
-        if ((instruction & 0xE000u) == 0x0000u)
+        // Perbaikan: jangan menangkap kelompok ADD / SUB.
+        if ((instruction & 0xE000u) == 0x0000u &&
+            (instruction & 0x1800u) != 0x1800u)
         {
             const TInt type = (instruction >> 11) & 3;
 
@@ -761,15 +773,18 @@ namespace
                 cpu.r[rd] = result;
                 SetNzFlags(cpu, result);
                 break;
+
             case 1:
                 result = old - value;
                 SetArithmeticFlags(cpu, old, value, result, ETrue);
                 break;
+
             case 2:
                 result = old + value;
                 cpu.r[rd] = result;
                 SetArithmeticFlags(cpu, old, value, result, EFalse);
                 break;
+
             case 3:
                 result = old - value;
                 cpu.r[rd] = result;
@@ -800,63 +815,80 @@ namespace
             case 2: result = ShiftValue(left, 0, right & 0xFFu, carry); break;
             case 3: result = ShiftValue(left, 1, right & 0xFFu, carry); break;
             case 4: result = ShiftValue(left, 2, right & 0xFFu, carry); break;
+
             case 5:
             {
-                const TUint32 oldCarry = (cpu.cpsr & KFlagC) ? 1u : 0u;
+                const TUint32 oldCarry =
+                    (cpu.cpsr & KFlagC) ? 1u : 0u;
+
                 const TUint64 wide =
                     static_cast<TUint64>(left) + right + oldCarry;
 
                 result = static_cast<TUint32>(wide);
+
                 SetNzFlags(cpu, result);
                 cpu.cpsr &= ~(KFlagC | KFlagV);
 
                 if (wide >> 32)
                     cpu.cpsr |= KFlagC;
 
-                const TUint32 overflow = ~(left ^ right) & (left ^ result);
+                const TUint32 overflow =
+                    ~(left ^ right) & (left ^ result);
 
                 if (overflow & 0x80000000u)
                     cpu.cpsr |= KFlagV;
 
                 return ENgbaCpuOk;
             }
+
             case 6:
             {
-                const TUint32 oldCarry = (cpu.cpsr & KFlagC) ? 1u : 0u;
+                const TUint32 oldCarry =
+                    (cpu.cpsr & KFlagC) ? 1u : 0u;
+
                 const TUint64 subtrahend =
-                    static_cast<TUint64>(right) + (oldCarry ? 0u : 1u);
+                    static_cast<TUint64>(right) +
+                    (oldCarry ? 0u : 1u);
 
                 result = left - static_cast<TUint32>(subtrahend);
+
                 SetNzFlags(cpu, result);
                 cpu.cpsr &= ~(KFlagC | KFlagV);
 
                 if (static_cast<TUint64>(left) >= subtrahend)
                     cpu.cpsr |= KFlagC;
 
-                const TUint32 overflow = (left ^ right) & (left ^ result);
+                const TUint32 overflow =
+                    (left ^ right) & (left ^ result);
 
                 if (overflow & 0x80000000u)
                     cpu.cpsr |= KFlagV;
 
                 return ENgbaCpuOk;
             }
+
             case 7: result = ShiftValue(left, 3, right & 0xFFu, carry); break;
+
             case 8:
                 result = left & right;
                 SetNzFlags(cpu, result);
                 return ENgbaCpuOk;
+
             case 9:
                 result = 0u - right;
                 SetArithmeticFlags(cpu, 0, right, result, ETrue);
                 return ENgbaCpuOk;
+
             case 10:
                 result = left - right;
                 SetArithmeticFlags(cpu, left, right, result, ETrue);
                 return ENgbaCpuOk;
+
             case 11:
                 result = left + right;
                 SetArithmeticFlags(cpu, left, right, result, EFalse);
                 return ENgbaCpuOk;
+
             case 12: result = left | right; break;
             case 13: result = left * right; break;
             case 14: result = left & ~right; break;
@@ -882,23 +914,52 @@ namespace
 
             switch (operation)
             {
-            case 0: NgbaMemoryWrite32(memoryAddress, cpu.r[rd]); break;
-            case 1: NgbaMemoryWrite16(memoryAddress, static_cast<TUint16>(cpu.r[rd])); break;
-            case 2: NgbaMemoryWrite8(memoryAddress, static_cast<TUint8>(cpu.r[rd])); break;
+            case 0:
+                NgbaMemoryWrite32(memoryAddress, cpu.r[rd]);
+                break;
+
+            case 1:
+                NgbaMemoryWrite16(
+                    memoryAddress,
+                    static_cast<TUint16>(cpu.r[rd])
+                );
+                break;
+
+            case 2:
+                NgbaMemoryWrite8(
+                    memoryAddress,
+                    static_cast<TUint8>(cpu.r[rd])
+                );
+                break;
+
             case 3:
                 cpu.r[rd] = static_cast<TUint32>(
                     static_cast<TInt32>(
-                        static_cast<TInt8>(NgbaMemoryRead8(memoryAddress))
+                        static_cast<TInt8>(
+                            NgbaMemoryRead8(memoryAddress)
+                        )
                     )
                 );
                 break;
-            case 4: cpu.r[rd] = NgbaMemoryRead32(memoryAddress); break;
-            case 5: cpu.r[rd] = NgbaMemoryRead16(memoryAddress); break;
-            case 6: cpu.r[rd] = NgbaMemoryRead8(memoryAddress); break;
+
+            case 4:
+                cpu.r[rd] = NgbaMemoryRead32(memoryAddress);
+                break;
+
+            case 5:
+                cpu.r[rd] = NgbaMemoryRead16(memoryAddress);
+                break;
+
+            case 6:
+                cpu.r[rd] = NgbaMemoryRead8(memoryAddress);
+                break;
+
             case 7:
                 cpu.r[rd] = static_cast<TUint32>(
                     static_cast<TInt32>(
-                        static_cast<TInt16>(NgbaMemoryRead16(memoryAddress))
+                        static_cast<TInt16>(
+                            NgbaMemoryRead16(memoryAddress)
+                        )
                     )
                 );
                 break;
@@ -907,7 +968,7 @@ namespace
             return ENgbaCpuOk;
         }
 
-        // LDR literal: LDR Rd, [PC, #imm]
+        // LDR literal.
         if ((instruction & 0xF800u) == 0x4800u)
         {
             const TInt rd = (instruction >> 8) & 7;
@@ -942,7 +1003,10 @@ namespace
             else
             {
                 if (byte)
-                    NgbaMemoryWrite8(memoryAddress, static_cast<TUint8>(cpu.r[rd]));
+                    NgbaMemoryWrite8(
+                        memoryAddress,
+                        static_cast<TUint8>(cpu.r[rd])
+                    );
                 else
                     NgbaMemoryWrite32(memoryAddress, cpu.r[rd]);
             }
@@ -963,7 +1027,10 @@ namespace
             if (load)
                 cpu.r[rd] = NgbaMemoryRead16(memoryAddress);
             else
-                NgbaMemoryWrite16(memoryAddress, static_cast<TUint16>(cpu.r[rd]));
+                NgbaMemoryWrite16(
+                    memoryAddress,
+                    static_cast<TUint16>(cpu.r[rd])
+                );
 
             return ENgbaCpuOk;
         }
@@ -1063,7 +1130,8 @@ namespace
 
                 if (extra)
                 {
-                    const TUint32 value = NgbaMemoryRead32(memoryAddress);
+                    const TUint32 value =
+                        NgbaMemoryRead32(memoryAddress);
 
                     if (value & 1u)
                     {
@@ -1112,6 +1180,20 @@ namespace
             cpu.r[rb] = memoryAddress;
 
             return ENgbaCpuOk;
+        }
+
+        // BIOS SWI - Thumb mode.
+        if ((instruction & 0xFF00u) == 0xDF00u)
+        {
+            const TUint32 swiNumber = instruction & 0xFFu;
+
+            if (swiNumber == 0x01u)
+            {
+                NgbaMemoryRegisterRamReset(cpu.r[0]);
+                return ENgbaCpuOk;
+            }
+
+            return ENgbaCpuUnsupported;
         }
 
         // Conditional branch.
@@ -1228,7 +1310,9 @@ namespace
     }
 }
 
-// RESET
+// ---------------------------------------------------------
+// CPU RESET
+// ---------------------------------------------------------
 
 void NgbaCpuReset(TNgbaCpuState& cpu)
 {
@@ -1248,7 +1332,9 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     cpu.lastInstructionSize = 0;
 }
 
+// ---------------------------------------------------------
 // CPU STEP
+// ---------------------------------------------------------
 
 TInt NgbaCpuStep(TNgbaCpuState& cpu)
 {
@@ -1304,9 +1390,14 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     return result;
 }
 
+// ---------------------------------------------------------
 // REGISTER ACCESS
+// ---------------------------------------------------------
 
-TUint32 NgbaCpuGetRegister(const TNgbaCpuState& cpu, TInt index)
+TUint32 NgbaCpuGetRegister(
+    const TNgbaCpuState& cpu,
+    TInt index
+)
 {
     if (index < 0 || index > 15)
         return 0;
