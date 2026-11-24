@@ -337,6 +337,54 @@ namespace
         return ENgbaCpuOk;
     }
 
+    // BIOS HLE SWI 0Ch: CpuFastSet.
+    //
+    // R0 = source address
+    // R1 = destination address
+    // R2 = control
+    //
+    // Bit 24: 0 = copy, 1 = fixed-source fill
+    // Bits 0-20: number of 32-bit words
+    //
+    // CpuFastSet selalu menggunakan transfer 32-bit.
+
+    TInt ExecuteBiosCpuFastSet(TNgbaCpuState& cpu)
+    {
+        TUint32 source = cpu.r[0] & ~3u;
+        TUint32 destination = cpu.r[1] & ~3u;
+        const TUint32 control = cpu.r[2];
+
+        const TBool fixedSource =
+            (control & (1u << 24)) != 0;
+
+        const TUint32 count =
+            control & 0x001FFFFFu;
+
+        if (count == 0)
+            return ENgbaCpuOk;
+
+        TUint32 fillValue = 0;
+
+        if (fixedSource)
+            fillValue = NgbaMemoryRead32(source);
+
+        for (TUint32 i = 0; i < count; ++i)
+        {
+            TUint32 value = fillValue;
+
+            if (!fixedSource)
+            {
+                value = NgbaMemoryRead32(source);
+                source += 4;
+            }
+
+            NgbaMemoryWrite32(destination, value);
+            destination += 4;
+        }
+
+        return ENgbaCpuOk;
+    }
+
     TInt ExecuteMultiply(
         TNgbaCpuState& cpu,
         TUint32 instruction
@@ -568,6 +616,9 @@ namespace
 
             if (swiNumber == 0x0Bu)
                 return ExecuteBiosCpuSet(cpu);
+
+            if (swiNumber == 0x0Cu)
+                return ExecuteBiosCpuFastSet(cpu);
 
             return ENgbaCpuUnsupported;
         }
@@ -1274,6 +1325,9 @@ namespace
 
             if (swiNumber == 0x0Bu)
                 return ExecuteBiosCpuSet(cpu);
+
+            if (swiNumber == 0x0Cu)
+                return ExecuteBiosCpuFastSet(cpu);
 
             return ENgbaCpuUnsupported;
         }
