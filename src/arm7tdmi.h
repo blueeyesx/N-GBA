@@ -10,12 +10,8 @@ struct TNgbaCpuState
     TUint32 cpsr;
 
     TBool halted;
-
-    // ETrue = Thumb 16-bit.
-    // EFalse = ARM 32-bit.
     TBool thumb;
 
-    // Jumlah instruksi yang sudah dijalankan.
     TUint32 cycles;
 };
 
@@ -33,18 +29,18 @@ void NgbaCpuReset(TNgbaCpuState& aCpu);
 // Menjalankan satu instruksi ARM atau Thumb.
 TInt NgbaCpuStep(TNgbaCpuState& aCpu);
 
-// Mendapatkan register CPU.
+// Mengambil nilai register.
 TUint32 NgbaCpuGetRegister(
     const TNgbaCpuState& aCpu,
     TInt aRegister
 );
 
-// Mendapatkan CPSR.
+// Mengambil CPSR.
 TUint32 NgbaCpuGetCpsr(
     const TNgbaCpuState& aCpu
 );
 
-// Memeriksa mode Thumb.
+// Memeriksa apakah CPU berada dalam mode Thumb.
 TBool NgbaCpuIsThumb(
     const TNgbaCpuState& aCpu
 );
