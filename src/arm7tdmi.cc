@@ -1,5 +1,6 @@
 
 #include "arm7tdmi.h"
+#include "gba_memory.h"
 
 namespace
 {
@@ -165,13 +166,144 @@ namespace
         }
     }
 
-    TUint32 Read32(const TUint8* data)
+    TUint32 DecodeMemoryOffset(
+        const TNgbaCpuState& cpu,
+        TUint32 instruction,
+        TUint32 instructionAddress
+    )
     {
-        return
-            static_cast<TUint32>(data[0]) |
-            (static_cast<TUint32>(data[1]) << 8) |
-            (static_cast<TUint32>(data[2]) << 16) |
-            (static_cast<TUint32>(data[3]) << 24);
+        if ((instruction & (1u << 25)) == 0)
+            return instruction & 0xFFFu;
+
+        const TInt rm = instruction & 15;
+        const TUint32 value = ReadRegister(
+            cpu,
+            rm,
+            instructionAddress
+        );
+
+        const TInt shiftType =
+            static_cast<TInt>((instruction >> 5) & 3);
+
+        const TInt shiftAmount =
+            static_cast<TInt>((instruction >> 7) & 31);
+
+        if (shiftAmount == 0)
+            return value;
+
+        switch (shiftType)
+        {
+        case 0:
+            return value << shiftAmount;
+
+        case 1:
+            return value >> shiftAmount;
+
+        case 2:
+            if ((value & 0x80000000u) != 0)
+                return (value >> shiftAmount) |
+                       (~0u << (32 - shiftAmount));
+
+            return value >> shiftAmount;
+
+        case 3:
+            return RotateRight(value, shiftAmount);
+        }
+
+        return value;
+    }
+
+    TInt ExecuteSingleDataTransfer(
+        TNgbaCpuState& cpu,
+        TUint32 instruction,
+        TUint32 instructionAddress
+    )
+    {
+        const TBool preIndex =
+            (instruction & (1u << 24)) != 0;
+
+        const TBool addOffset =
+            (instruction & (1u << 23)) != 0;
+
+        const TBool byteTransfer =
+            (instruction & (1u << 22)) != 0;
+
+        const TBool writeBack =
+            (instruction & (1u << 21)) != 0;
+
+        const TBool load =
+            (instruction & (1u << 20)) != 0;
+
+        const TInt rn =
+            static_cast<TInt>((instruction >> 16) & 15);
+
+        const TInt rd =
+            static_cast<TInt>((instruction >> 12) & 15);
+
+        const TUint32 base = ReadRegister(
+            cpu,
+            rn,
+            instructionAddress
+        );
+
+        const TUint32 offset = DecodeMemoryOffset(
+            cpu,
+            instruction,
+            instructionAddress
+        );
+
+        TUint32 adjusted = base;
+
+        if (addOffset)
+            adjusted += offset;
+        else
+            adjusted -= offset;
+
+        const TUint32 address =
+            preIndex ? adjusted : base;
+
+        if (load)
+        {
+            TUint32 value = 0;
+
+            if (byteTransfer)
+                value = NgbaMemoryRead8(address);
+            else
+                value = NgbaMemoryRead32(address);
+
+            if (rd == 15)
+                cpu.r[15] = value & ~3u;
+            else
+                cpu.r[rd] = value;
+        }
+        else
+        {
+            const TUint32 value = ReadRegister(
+                cpu,
+                rd,
+                instructionAddress
+            );
+
+            if (byteTransfer)
+            {
+                NgbaMemoryWrite8(
+                    address,
+                    static_cast<TUint8>(value & 0xFFu)
+                );
+            }
+            else
+            {
+                NgbaMemoryWrite32(address, value);
+            }
+        }
+
+        if (!preIndex || writeBack)
+        {
+            if (rn != 15)
+                cpu.r[rn] = adjusted;
+        }
+
+        return ENgbaCpuOk;
     }
 }
 
@@ -180,18 +312,17 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     for (TInt i = 0; i < 16; ++i)
         cpu.r[i] = 0;
 
+    // Titik awal sementara untuk pengujian ROM langsung.
+    // Boot BIOS GBA belum diterapkan.
     cpu.r[15] = KRomBase;
+
     cpu.cpsr = 0x000000D3u;
     cpu.halted = EFalse;
 }
 
-TInt NgbaCpuStep(
-    TNgbaCpuState& cpu,
-    const TUint8* rom,
-    TInt romSize
-)
+TInt NgbaCpuStep(TNgbaCpuState& cpu)
 {
-    if (rom == NULL || romSize < 4)
+    if (!NgbaMemoryReady())
         return ENgbaCpuBadArgument;
 
     if (cpu.halted)
@@ -199,18 +330,12 @@ TInt NgbaCpuStep(
 
     const TUint32 address = cpu.r[15];
 
-    if (address < KRomBase)
-        return ENgbaCpuRomEnd;
-
-    const TUint32 offset = address - KRomBase;
-
-    if (offset > static_cast<TUint32>(romSize - 4))
-        return ENgbaCpuRomEnd;
-
     if ((address & 3u) != 0)
         return ENgbaCpuBadArgument;
 
-    const TUint32 instruction = Read32(rom + offset);
+    // Ambil instruksi melalui GBA Memory Bus.
+    const TUint32 instruction =
+        NgbaMemoryRead32(address);
 
     cpu.r[15] = address + 4;
 
@@ -219,7 +344,7 @@ TInt NgbaCpuStep(
     if (!ConditionPassed(cpu.cpsr, condition))
         return ENgbaCpuOk;
 
-    // BX Rm
+    // BX Rm.
     if ((instruction & 0x0FFFFFF0u) == 0x012FFF10u)
     {
         const TInt rm = instruction & 15;
@@ -232,7 +357,7 @@ TInt NgbaCpuStep(
 
         if ((target & 1u) != 0)
         {
-            // Thumb mode is not implemented yet.
+            // Thumb belum didukung.
             cpu.r[15] = target & ~1u;
             return ENgbaCpuUnsupported;
         }
@@ -241,7 +366,7 @@ TInt NgbaCpuStep(
         return ENgbaCpuOk;
     }
 
-    // B / BL
+    // B / BL.
     if ((instruction & 0x0E000000u) == 0x0A000000u)
     {
         TInt32 displacement =
@@ -261,7 +386,17 @@ TInt NgbaCpuStep(
         return ENgbaCpuOk;
     }
 
-    // Data processing instructions.
+    // LDR / STR / LDRB / STRB.
+    if ((instruction & 0x0C000000u) == 0x04000000u)
+    {
+        return ExecuteSingleDataTransfer(
+            cpu,
+            instruction,
+            address
+        );
+    }
+
+    // Data processing ARM.
     if ((instruction & 0x0C000000u) == 0)
     {
         const TInt opcode =
