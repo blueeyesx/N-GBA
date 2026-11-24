@@ -1,6 +1,7 @@
 
 #include "gba_memory.h"
 #include "game_config.h"
+#include "ngba_paths.h"
 
 #include <e32std.h>
 #include <f32file.h>
@@ -51,7 +52,6 @@ namespace
     TUint8 gVram[KVramSize];
     TUint8 gOam[KOamSize];
 
-    // Buffer terbesar untuk Flash 128 KB.
     TUint8 gSaveData[KFlashLargeSize];
 
     const TUint8* gRom = NULL;
@@ -144,25 +144,7 @@ namespace
     // SAVE FILE
     // -----------------------------------------------------
 
-    _LIT(KSaveDirectory, "C:\\Data\\N-GBA\\");
     _LIT(KSaveExtension, ".sav");
-
-    // -----------------------------------------------------
-    // CREATE SAVE DIRECTORY
-    // -----------------------------------------------------
-
-    TInt EnsureSaveDirectory(RFs& aFs)
-    {
-        TInt error = aFs.MkDirAll(KSaveDirectory);
-
-        if (error == KErrNone ||
-            error == KErrAlreadyExists)
-        {
-            return KErrNone;
-        }
-
-        return error;
-    }
 
     // -----------------------------------------------------
     // FILE MANAGEMENT
@@ -248,7 +230,6 @@ namespace
 
             case ENgbaSaveAuto:
             default:
-                // Fallback sementara ke SRAM.
                 gSaveType = ENgbaSaveSram;
                 gSaveSize = KSramSize;
                 break;
@@ -267,7 +248,20 @@ namespace
         if (config.gameCode.Length() != 4)
             return KErrNotReady;
 
-        aPath.Copy(KSaveDirectory);
+        // Pastikan pengelola direktori sudah diinisialisasi.
+        if (!NgbaPathsReady())
+        {
+            TInt initError = NgbaPathsInit();
+
+            if (initError != KErrNone)
+                return initError;
+        }
+
+        TFileName saveDirectory;
+
+        NgbaGetSavePath(saveDirectory);
+
+        aPath.Copy(saveDirectory);
 
         for (TInt i = 0; i < 4; ++i)
         {
@@ -294,7 +288,6 @@ namespace
         if (error != KErrNone)
             return error;
 
-        // Nilai awal SRAM / EEPROM / Flash adalah FF.
         Mem::Fill(
             gSaveData,
             gSaveSize,
@@ -308,15 +301,6 @@ namespace
         if (error != KErrNone)
             return error;
 
-        // Buat direktori jika belum tersedia.
-        error = EnsureSaveDirectory(fs);
-
-        if (error != KErrNone)
-        {
-            fs.Close();
-            return error;
-        }
-
         RFile file;
 
         error = file.Open(
@@ -327,7 +311,6 @@ namespace
 
         if (error == KErrNotFound)
         {
-            file.Close();
             fs.Close();
 
             gSaveDirty = EFalse;
@@ -406,15 +389,6 @@ namespace
 
         if (error != KErrNone)
             return error;
-
-        // Pastikan direktori tersedia sebelum menyimpan.
-        error = EnsureSaveDirectory(fs);
-
-        if (error != KErrNone)
-        {
-            fs.Close();
-            return error;
-        }
 
         RFile file;
 
@@ -1308,7 +1282,6 @@ TInt NgbaMemoryInitFile(
 
 void NgbaMemoryShutdown()
 {
-    // Simpan sebelum ROM dan file ditutup.
     FlushSaveFile();
 
     gReady = EFalse;
@@ -1414,7 +1387,6 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
 {
     aAddress &= ~1u;
 
-    // EEPROM menggunakan akses serial 16-bit.
     if (aAddress >= KEepromBase &&
         aAddress < KSramBase &&
         gSaveType == ENgbaSaveEeprom)
