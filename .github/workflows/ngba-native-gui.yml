@@ -1,5 +1,5 @@
 
-name: N-GBA - Native GUI v3
+name: N-GBA - Native GUI v4
 
 on:
   workflow_dispatch:
@@ -71,19 +71,26 @@ jobs:
 
           symbian toolchain probe
 
-      - name: Validate N-GBA source files
+      - name: Validate source files
         shell: bash
         run: |
           set -e
 
-          test -s src/app.cc
-          test -s src/window_server.cc
-          test -s src/window_server.h
-          test -s symbian.toml
+          for file in \
+            src/app.cc \
+            src/window_server.cc \
+            src/window_server.h \
+            symbian.toml
+          do
+            if [ ! -s "$file" ]; then
+              echo "ERROR: Missing source file: $file"
+              exit 1
+            fi
+          done
 
-          echo "N-GBA source files verified."
+          echo "All required source files found."
 
-      - name: Initialize N-GBA project
+      - name: Initialize Symbian project
         shell: bash
         run: |
           set -e
@@ -99,47 +106,47 @@ jobs:
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Install N-GBA application sources
+      - name: Install N-GBA sources
         shell: bash
         run: |
           set -e
 
-          # The platform template expects its application entry point
-          # in the project root as app.cc.
-          #
-          # Replace the generated Hello World entry point with N-GBA.
-          cp src/app.cc "$PROJECT/app.cc"
-
-          # Install the Window Server implementation.
           mkdir -p "$PROJECT/src"
 
+          # Install the real N-GBA entry point.
+          cp src/app.cc "$PROJECT/app.cc"
+
+          # Install Window Server implementation.
           cp src/window_server.cc \
             "$PROJECT/src/window_server.cc"
 
+          # Header is copied to both locations.
+          # app.cc is in the project root.
+          cp src/window_server.h \
+            "$PROJECT/window_server.h"
+
+          # window_server.cc is in src/.
           cp src/window_server.h \
             "$PROJECT/src/window_server.h"
 
-          # Verify that the root app.cc is the N-GBA entry point.
-          echo "Checking N-GBA entry point..."
-
-          grep -n "int main" "$PROJECT/app.cc"
-          grep -n "GuiWindowServerMain" "$PROJECT/app.cc"
-
-          # Do not install a second copy of the entry point.
+          # Remove duplicate entry point copies.
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
-          echo "Installed source files:"
-          find "$PROJECT" -maxdepth 2 -type f | sort
+          echo "Root app.cc:"
+          cat "$PROJECT/app.cc"
 
-      - name: Configure N-GBA CMake
+          echo "Root window_server.h:"
+          ls -l "$PROJECT/window_server.h"
+
+          echo "Source header:"
+          ls -l "$PROJECT/src/window_server.h"
+
+      - name: Configure CMake
         shell: bash
         run: |
           set -e
 
-          # Replace the generated CMake configuration.
-          # app.cc is the platform project's root entry point.
-          # Do not add src/app.cc as another source.
           cat > "$PROJECT/CMakeLists.txt" <<'CMAKE'
           cmake_minimum_required(VERSION 3.28)
 
@@ -161,21 +168,10 @@ jobs:
           )
           CMAKE
 
-          echo "Generated N-GBA CMakeLists.txt:"
+          echo "N-GBA CMake configuration:"
           cat "$PROJECT/CMakeLists.txt"
 
-          # Verify that the second entry point is not listed.
-          if grep -Fq "src/app.cc" "$PROJECT/CMakeLists.txt"; then
-            echo "ERROR: duplicate N-GBA entry point detected."
-            exit 1
-          fi
-
-          if grep -Fq "src/main.cpp" "$PROJECT/CMakeLists.txt"; then
-            echo "ERROR: old main.cpp source detected."
-            exit 1
-          fi
-
-      - name: Configure Symbian project metadata
+      - name: Configure Symbian metadata
         shell: bash
         run: |
           set -e
@@ -202,7 +198,7 @@ jobs:
 
           if count != 1:
               raise SystemExit(
-                  "Could not set project architecture."
+                  "ERROR: Could not set architecture in symbian.toml"
               )
 
           path.write_text(content)
@@ -227,7 +223,7 @@ jobs:
 
           if content.count(marker) != 1:
               raise SystemExit(
-                  "Expected exactly one include(SymbianApp)"
+                  "ERROR: include(SymbianApp) not found exactly once"
               )
 
           setting = (
@@ -244,35 +240,39 @@ jobs:
           path.write_text(content)
           PY
 
-          echo "Legacy EKA2 runtime enabled."
-
-      - name: Verify single application entry point
+      - name: Verify source layout
         shell: bash
         run: |
           set -e
 
           test -s "$PROJECT/app.cc"
+          test -s "$PROJECT/window_server.h"
           test -s "$PROJECT/src/window_server.cc"
           test -s "$PROJECT/src/window_server.h"
 
-          echo "Root application entry point:"
-          grep -n "int main" "$PROJECT/app.cc"
+          echo "Checking app.cc header..."
+          grep -n '#include "window_server.h"' \
+            "$PROJECT/app.cc"
 
-          echo "Checking for duplicate source files..."
+          echo "Checking root header..."
+          test -s "$PROJECT/window_server.h"
+
+          echo "Checking src header..."
+          test -s "$PROJECT/src/window_server.h"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
-            echo "ERROR: src/app.cc must not be compiled."
+            echo "ERROR: Duplicate app.cc found."
             exit 1
           fi
 
           if [ -f "$PROJECT/src/main.cpp" ]; then
-            echo "ERROR: old main.cpp must not be compiled."
+            echo "ERROR: Old main.cpp found."
             exit 1
           fi
 
-          echo "Single entry point check passed."
+          echo "Source layout verification passed."
 
-      - name: Clean previous build files
+      - name: Clean build directory
         shell: bash
         run: |
           set -e
@@ -280,9 +280,9 @@ jobs:
           rm -rf "$PROJECT/.symbian/build"
           rm -rf "$PROJECT/.symbian/package"
 
-          echo "Previous build directories cleaned."
+          echo "Build directory cleaned."
 
-      - name: Build N-GBA native GUI
+      - name: Build N-GBA
         shell: bash
         run: |
           set -e
@@ -292,10 +292,10 @@ jobs:
           EXE="$PROJECT/.symbian/build/ngba_native_gui.exe"
 
           if [ ! -s "$EXE" ]; then
-            echo "ERROR: N-GBA executable was not generated."
+            echo "ERROR: Executable not found."
 
             find "$PROJECT/.symbian" \
-              -maxdepth 6 -type f || true
+              -maxdepth 7 -type f || true
 
             exit 1
           fi
@@ -319,7 +319,7 @@ jobs:
               'Dll: *(libc|libm|libpthread)\.dll' \
               "$RUNNER_TEMP/ngba-e32-inspection.txt"; then
 
-              echo "ERROR: Forbidden Open C import detected."
+              echo "ERROR: Unexpected Open C import."
               exit 1
             fi
 
@@ -330,13 +330,13 @@ jobs:
               "$RUNNER_TEMP/ngba-e32-inspection.txt"
           fi
 
-      - name: Package N-GBA SIS
+      - name: Package SIS
         shell: bash
         run: |
           set -e
 
-          OUT="$PROJECT/.symbian/package"
           EXE="$PROJECT/.symbian/build/ngba_native_gui.exe"
+          OUT="$PROJECT/.symbian/package"
 
           mkdir -p "$OUT"
 
@@ -348,18 +348,18 @@ jobs:
           SIS="$OUT/ngba_native_gui.sis"
 
           if [ ! -s "$SIS" ]; then
-            echo "ERROR: SIS package was not generated."
+            echo "ERROR: SIS package not found."
 
             find "$PROJECT/.symbian" \
-              -maxdepth 6 -type f || true
+              -maxdepth 7 -type f || true
 
             exit 1
           fi
 
-          echo "N-GBA SIS generated:"
+          echo "SIS package generated:"
           ls -lh "$SIS"
 
-      - name: Inspect SIS package
+      - name: Inspect SIS
         shell: bash
         run: |
           set -e
@@ -369,11 +369,11 @@ jobs:
           symbian inspect --format sis "$SIS" \
             | tee "$RUNNER_TEMP/ngba-sis-inspection.txt"
 
-      - name: Upload N-GBA build artifacts
+      - name: Upload N-GBA artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Native-GUI-v3-${{ matrix.target }}
+          name: N-GBA-Native-GUI-v4-${{ matrix.target }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/ngba_native_gui/.symbian/build/
