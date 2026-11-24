@@ -12,7 +12,6 @@ namespace
 
     const TUint32 KRomBase = 0x08000000u;
 
-    // Menjaga status ARM/Thumb dan bit T CPSR tetap sinkron.
     void SetThumbState(TNgbaCpuState& cpu, TBool thumb)
     {
         cpu.thumb = thumb;
@@ -284,14 +283,12 @@ namespace
         return ShiftValue(value, type, amount, carry);
     }
 
-    // BIOS SWI 01h: RegisterRamReset.
     TInt ExecuteBiosRegisterRamReset(TNgbaCpuState& cpu)
     {
         NgbaMemoryRegisterRamReset(cpu.r[0]);
         return ENgbaCpuOk;
     }
 
-    // BIOS SWI 0Bh: CpuSet.
     TInt ExecuteBiosCpuSet(TNgbaCpuState& cpu)
     {
         const TUint32 source = cpu.r[0];
@@ -358,7 +355,6 @@ namespace
         return ENgbaCpuOk;
     }
 
-    // BIOS SWI 0Ch: CpuFastSet.
     TInt ExecuteBiosCpuFastSet(TNgbaCpuState& cpu)
     {
         TUint32 source = cpu.r[0] & ~3u;
@@ -629,7 +625,7 @@ namespace
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
-                (instruction >> 16) & 0xFFu;
+                instruction & 0x00FFFFFFu;
 
             if (swiNumber == 0x01u)
                 return ExecuteBiosRegisterRamReset(cpu);
@@ -698,14 +694,51 @@ namespace
 
             if (instruction & (1u << 25))
             {
-                TBool carry = EFalse;
+                TBool carry = (cpu.cpsr & KFlagC) != 0;
 
-                offset = ShiftValue(
-                    ReadRegister(cpu, instruction & 15, address),
-                    (instruction >> 5) & 3,
-                    (instruction >> 7) & 31,
-                    carry
-                );
+                const TInt shiftType =
+                    (instruction >> 5) & 3;
+
+                const TInt shiftAmount =
+                    (instruction >> 7) & 31;
+
+                const TUint32 rm =
+                    ReadRegister(cpu, instruction & 15, address);
+
+                if (shiftAmount == 0)
+                {
+                    if (shiftType == 0)
+                    {
+                        offset = rm;
+                    }
+                    else if (shiftType == 1)
+                    {
+                        offset = 0;
+                        carry = (rm & 0x80000000u) != 0;
+                    }
+                    else if (shiftType == 2)
+                    {
+                        carry = (rm & 0x80000000u) != 0;
+                        offset = carry ? 0xFFFFFFFFu : 0;
+                    }
+                    else
+                    {
+                        carry = (rm & 1u) != 0;
+
+                        offset = (rm >> 1) |
+                            ((cpu.cpsr & KFlagC)
+                                ? 0x80000000u : 0);
+                    }
+                }
+                else
+                {
+                    offset = ShiftValue(
+                        rm,
+                        shiftType,
+                        shiftAmount,
+                        carry
+                    );
+                }
             }
 
             const TUint32 adjusted = add ? base + offset : base - offset;
@@ -1297,7 +1330,6 @@ namespace
                     const TUint32 value =
                         NgbaMemoryRead32(memoryAddress);
 
-                    // POP {PC}: tetap dalam Thumb state.
                     SetThumbState(cpu, ETrue);
                     cpu.r[15] = value & ~1u;
 
@@ -1480,11 +1512,15 @@ namespace
             {
                 if (rd == 15)
                 {
+                    const TUint32 pcValue = address + 4u;
+
                     SetThumbState(cpu, ETrue);
-                    cpu.r[15] = (cpu.r[15] + value) & ~1u;
+                    cpu.r[15] = (pcValue + value) & ~1u;
                 }
                 else
+                {
                     cpu.r[rd] += value;
+                }
             }
             else
                 return ENgbaCpuUnsupported;
@@ -1506,7 +1542,6 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     cpu.r[15] = KRomBase;
     cpu.r[13] = 0x03007F00u;
 
-    // System mode, ARM state, IRQ dan FIQ dinonaktifkan.
     cpu.cpsr = 0x000000DFu;
 
     cpu.halted = EFalse;
@@ -1529,7 +1564,6 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     if (cpu.halted)
         return ENgbaCpuUnsupported;
 
-    // Pastikan bit T CPSR mengikuti status CPU.
     SetThumbState(cpu, cpu.thumb);
 
     const TUint32 address = cpu.r[15];
