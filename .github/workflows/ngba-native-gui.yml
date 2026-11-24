@@ -188,6 +188,7 @@ jobs:
               Symbian::Stackless
               Symbian::WindowServer
               Symbian::Gdi
+              Symbian::FileServer
           )
           CMAKE
 
@@ -238,6 +239,12 @@ jobs:
           test -s "$PROJECT/src/window_server.h"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
+
+          grep -q 'LoadLanguageMode' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'SaveLanguageMode' \
+            "$PROJECT/src/window_server.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
