@@ -1,6 +1,7 @@
 
 #include "window_server.h"
 #include "rom_loader.h"
+#include "arm7tdmi.h"
 
 #include <e32base.h>
 #include <e32std.h>
@@ -15,6 +16,10 @@ const TInt KSettingsMenuCount = 3;
 const TInt KLanguageMenuCount = 4;
 const TInt KFontMenuCount = 4;
 const TInt KMaxRoms = 24;
+
+// Eksekusi CPU dibatasi agar GUI tetap responsif.
+const TInt KCpuInstructionsPerTick = 100;
+const TInt KCpuTimerInterval = 16000;
 
 enum TLanguageMode {
     ELanguageAuto = 0,
@@ -286,6 +291,23 @@ TInt LoadRomList(TBuf<KMaxFileName>* names)
     }
 
     return count;
+}
+
+// --------------------------------------------------
+// TIMER CPU
+// --------------------------------------------------
+
+void StopCpuTimer(
+    RTimer& timer,
+    TRequestStatus& status,
+    TBool& pending
+)
+{
+    if (pending) {
+        timer.Cancel();
+        User::WaitForRequest(status);
+        pending = EFalse;
+    }
 }
 
 // --------------------------------------------------
@@ -567,7 +589,13 @@ void ActivateSelected(
     TBool& running,
     const char*& message,
     TBuf<KMaxFileName>* romNames,
-    TInt romCount
+    TInt romCount,
+    TNgbaCpuState& cpu,
+    TBool& cpuActive,
+    RTimer& cpuTimer,
+    TRequestStatus& cpuTimerStatus,
+    TBool& cpuTimerPending,
+    TBool timerReady
 )
 {
     if (page == EMainPage) {
@@ -671,6 +699,16 @@ void ActivateSelected(
     }
     else if (page == ERomPage) {
         if (romCount > 0 && selected < romCount) {
+
+            // Hentikan eksekusi ROM sebelumnya sebelum memuat ROM baru.
+            StopCpuTimer(
+                cpuTimer,
+                cpuTimerStatus,
+                cpuTimerPending
+            );
+
+            cpuActive = EFalse;
+
             TFileName romPath;
             romPath.Copy(KRomFolder);
             romPath.Append(romNames[selected]);
@@ -685,9 +723,29 @@ void ActivateSelected(
             );
 
             if (loadError == KErrNone) {
-                message = indonesian
-                    ? "ROM DIMUAT - CPU BELUM AKTIF"
-                    : "ROM LOADED - CPU NOT ACTIVE";
+                NgbaCpuReset(cpu);
+
+                if (timerReady) {
+                    cpuActive = ETrue;
+
+                    cpuTimer.After(
+                        cpuTimerStatus,
+                        TTimeIntervalMicroSeconds32(
+                            KCpuTimerInterval
+                        )
+                    );
+
+                    cpuTimerPending = ETrue;
+
+                    message = indonesian
+                        ? "ROM DIMUAT - CPU BERJALAN"
+                        : "ROM LOADED - CPU RUNNING";
+                }
+                else {
+                    message = indonesian
+                        ? "ROM DIMUAT - TIMER CPU GAGAL"
+                        : "ROM LOADED - CPU TIMER FAILED";
+                }
             }
             else if (loadError == KErrNoMemory) {
                 message = indonesian
@@ -813,6 +871,23 @@ TInt RunWindowServer()
                                     ? "ATAS BAWAH PILIH KEMBALI"
                                     : "UP DOWN SELECT BACK";
 
+                                // Status CPU.
+                                TNgbaCpuState cpu;
+                                NgbaCpuReset(cpu);
+
+                                TBool cpuActive = EFalse;
+                                TBool cpuTimerPending = EFalse;
+
+                                RTimer cpuTimer;
+
+                                const TInt timerError =
+                                    cpuTimer.CreateLocal();
+
+                                const TBool timerReady =
+                                    (timerError == KErrNone);
+
+                                TRequestStatus cpuTimerStatus;
+
                                 group.SetOrdinalPosition(0);
 
                                 window.SetExtent(
@@ -834,6 +909,10 @@ TInt RunWindowServer()
 
                                 while (running) {
                                     User::WaitForAnyRequest();
+
+                                    // --------------------------------
+                                    // EVENT INPUT
+                                    // --------------------------------
 
                                     if (events != KRequestPending) {
                                         if (events.Int() != KErrNone) {
@@ -930,7 +1009,13 @@ TInt RunWindowServer()
                                                     running,
                                                     message,
                                                     romNames,
-                                                    romCount
+                                                    romCount,
+                                                    cpu,
+                                                    cpuActive,
+                                                    cpuTimer,
+                                                    cpuTimerStatus,
+                                                    cpuTimerPending,
+                                                    timerReady
                                                 );
 
                                                 if (
@@ -996,6 +1081,17 @@ TInt RunWindowServer()
                                                     running
                                                 );
 
+                                                // CPU tidak berjalan di menu utama.
+                                                if (page != ERomPage && cpuActive) {
+                                                    StopCpuTimer(
+                                                        cpuTimer,
+                                                        cpuTimerStatus,
+                                                        cpuTimerPending
+                                                    );
+
+                                                    cpuActive = EFalse;
+                                                }
+
                                                 window.Invalidate();
                                             }
                                         }
@@ -1004,6 +1100,81 @@ TInt RunWindowServer()
                                             session.EventReady(&events);
                                         }
                                     }
+
+                                    // --------------------------------
+                                    // EKSEKUSI CPU
+                                    // --------------------------------
+
+                                    if (
+                                        cpuTimerPending &&
+                                        cpuTimerStatus != KRequestPending
+                                    ) {
+                                        cpuTimerPending = EFalse;
+
+                                        if (cpuTimerStatus.Int() != KErrNone) {
+                                            cpuActive = EFalse;
+
+                                            message = indonesian
+                                                ? "TIMER CPU BERHENTI"
+                                                : "CPU TIMER STOPPED";
+
+                                            window.Invalidate();
+                                        }
+                                        else if (cpuActive && page == ERomPage) {
+                                            TInt stepResult = ENgbaCpuOk;
+
+                                            for (
+                                                TInt i = 0;
+                                                i < KCpuInstructionsPerTick;
+                                                ++i
+                                            ) {
+                                                stepResult = NgbaCpuStep(cpu);
+
+                                                // Jangan mengulang instruksi
+                                                // yang belum didukung.
+                                                if (stepResult != ENgbaCpuOk) {
+                                                    break;
+                                                }
+                                            }
+
+                                            if (stepResult != ENgbaCpuOk) {
+                                                cpuActive = EFalse;
+
+                                                if (stepResult == ENgbaCpuUnsupported) {
+                                                    message = indonesian
+                                                        ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
+                                                        : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
+                                                }
+                                                else if (stepResult == ENgbaCpuRomEnd) {
+                                                    message = indonesian
+                                                        ? "CPU MENCAPAI AKHIR ROM"
+                                                        : "CPU REACHED ROM END";
+                                                }
+                                                else {
+                                                    message = indonesian
+                                                        ? "CPU BERHENTI - KESALAHAN"
+                                                        : "CPU STOPPED - ERROR";
+                                                }
+
+                                                window.Invalidate();
+                                            }
+                                            else {
+                                                // Jadwalkan tick berikutnya.
+                                                cpuTimer.After(
+                                                    cpuTimerStatus,
+                                                    TTimeIntervalMicroSeconds32(
+                                                        KCpuTimerInterval
+                                                    )
+                                                );
+
+                                                cpuTimerPending = ETrue;
+                                            }
+                                        }
+                                    }
+
+                                    // --------------------------------
+                                    // REDRAW
+                                    // --------------------------------
 
                                     if (redraws != KRequestPending) {
                                         if (redraws.Int() != KErrNone) {
@@ -1042,6 +1213,22 @@ TInt RunWindowServer()
                                     }
 
                                     session.Flush();
+                                }
+
+                                // --------------------------------
+                                // PEMBERSIHAN TIMER DAN EVENT
+                                // --------------------------------
+
+                                StopCpuTimer(
+                                    cpuTimer,
+                                    cpuTimerStatus,
+                                    cpuTimerPending
+                                );
+
+                                cpuActive = EFalse;
+
+                                if (timerReady) {
+                                    cpuTimer.Close();
                                 }
 
                                 session.EventReadyCancel();
