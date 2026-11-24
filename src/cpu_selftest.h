@@ -4,10 +4,10 @@
 
 #include <e32std.h>
 
-// Menguji CPU dan Memory Bus dengan instruksi ARM sederhana.
-// Setelah pengujian, Memory Bus dikembalikan ke ROM game.
+// Menguji CPU dan Memory Bus.
+// Setelah pengujian, Memory Bus dibuka kembali dari file ROM game.
 TInt NgbaCpuRunSelfTests(
-    const TUint8* aRestoreRom,
+    const TDesC& aRestorePath,
     TInt aRestoreRomSize
 );
 
