@@ -4,20 +4,20 @@
 
 #include <e32base.h>
 
-// Memuat ROM GBA ke RAM dan memeriksa header-nya.
+// Membuka ROM langsung dari file dan memeriksa header.
 TInt NgbaLoadRom(
     const TDesC& aPath,
     TUint32& aRomSize,
     TBuf8<4>& aGameCode
 );
 
-// Mengembalikan alamat data ROM yang sudah dimuat.
+// Pada mode file-backed, fungsi ini mengembalikan NULL.
 const TUint8* NgbaRomData();
 
 // Mengembalikan ukuran ROM.
 TInt NgbaRomSize();
 
-// Melepaskan memori ROM.
+// Menutup ROM.
 void NgbaReleaseRom();
 
 #endif
