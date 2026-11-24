@@ -1,9 +1,13 @@
-name: N-GBA - Native GUI v1
+
+name: N-GBA - Native GUI v2
 
 on:
   workflow_dispatch:
   push:
     paths:
+      - "src/app.cc"
+      - "src/window_server.cc"
+      - "src/window_server.h"
       - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
@@ -16,6 +20,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-24.04
+
     strategy:
       fail-fast: false
       matrix:
@@ -23,12 +28,13 @@ jobs:
           - target: S60v3-FP1-FP2-ARMv5T
             architecture: armv5t
             legacy: true
+
           - target: Symbian-Anna-ARMv6
             architecture: armv6
             legacy: false
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -43,96 +49,231 @@ jobs:
           python -m pip install symbian-platform==0.3.0
           symbian doctor
 
-      - name: Download SDK
+      - name: Download Symbian SDK
         shell: bash
         run: |
           curl -fL --retry 3 \
             "https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz" \
             -o "$RUNNER_TEMP/symbian-sdk.tar.gz"
+
           test -s "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
-      - name: Install SDK
+      - name: Install Symbian SDK
         shell: bash
         run: |
           symbian sdk install "$HOME/dev/symbian-sdk" \
             --archive "$RUNNER_TEMP/symbian-sdk.tar.gz"
+
           symbian toolchain probe
 
-      - name: Prepare isolated GUI project
+      - name: Validate N-GBA source files
         shell: bash
         run: |
+          set -e
+
+          test -s CMakeLists.txt
+          test -s symbian.toml
+          test -s src/app.cc
+          test -s src/window_server.cc
+          test -s src/window_server.h
+
+          echo "All N-GBA GUI source files found."
+
+      - name: Prepare native GUI project
+        shell: bash
+        run: |
+          set -e
+
           PROJECT="$RUNNER_TEMP/ngba_native_gui"
+
           symbian init "$PROJECT" \
             --name ngba_native_gui \
             --architecture "${{ matrix.architecture }}" \
             --non-interactive
 
+          # Use the repository CMake configuration.
           cp CMakeLists.txt "$PROJECT/CMakeLists.txt"
-          cp symbian.toml "$PROJECT/symbian.toml"
-          mkdir -p "$PROJECT/src"
-          cp src/main.cpp "$PROJECT/src/main.cpp"
 
-          if [ "${{ matrix.legacy }}" = "true" ]; then
-            python - "$PROJECT/CMakeLists.txt" <<'PY'
-          import pathlib, sys
-          p = pathlib.Path(sys.argv[1])
-          s = p.read_text()
-          marker = "include(SymbianApp)"
-          if s.count(marker) != 1:
-              raise SystemExit("include(SymbianApp) marker not found")
-          setting = (
-              'set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL '
-              '"ARMv5T older-ROM EKA2 runtime" FORCE)\n'
+          # Copy project metadata and preserve matrix architecture.
+          cp symbian.toml "$PROJECT/symbian.toml"
+
+          python - "$PROJECT/symbian.toml" \
+            "${{ matrix.architecture }}" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          architecture = sys.argv[2]
+
+          content = path.read_text()
+
+          content, count = re.subn(
+              r'(?m)^(\s*architecture\s*=\s*)"[^"]+"\s*$',
+              lambda match: match.group(1) + '"' + architecture + '"',
+              content,
+              count=1
           )
-          p.write_text(s.replace(marker, setting + marker, 1))
+
+          if count != 1:
+              raise SystemExit(
+                  "Could not update architecture in symbian.toml"
+              )
+
+          path.write_text(content)
           PY
+
+          # Copy actual N-GBA sources.
+          mkdir -p "$PROJECT/src"
+
+          cp src/app.cc "$PROJECT/src/app.cc"
+          cp src/window_server.cc "$PROJECT/src/window_server.cc"
+          cp src/window_server.h "$PROJECT/src/window_server.h"
+
+          # Verify that the generated Hello World app is not compiled.
+          echo "Checking CMake source list..."
+
+          grep -F "src/app.cc" "$PROJECT/CMakeLists.txt"
+          grep -F "src/window_server.cc" "$PROJECT/CMakeLists.txt"
+
+          if grep -Fq "app.cc)" "$PROJECT/CMakeLists.txt"; then
+            echo "Unexpected template source detected."
+            exit 1
+          fi
+
+          if grep -Fq "src/main.cpp" "$PROJECT/CMakeLists.txt"; then
+            echo "Old E32Main source detected."
+            exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Build native GUI
+          echo "Prepared project:"
+          find "$PROJECT" -maxdepth 2 -type f | sort
+
+      - name: Enable legacy EKA2 runtime
+        if: matrix.legacy
         shell: bash
         run: |
+          set -e
+
+          python - "$PROJECT/CMakeLists.txt" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          content = path.read_text()
+
+          marker = "include(SymbianApp)"
+
+          if content.count(marker) != 1:
+              raise SystemExit(
+                  "Expected exactly one include(SymbianApp)"
+              )
+
+          setting = (
+              'set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL '
+              '"ARMv5T older-ROM EKA2 runtime" FORCE)\n'
+          )
+
+          content = content.replace(
+              marker,
+              setting + marker,
+              1
+          )
+
+          path.write_text(content)
+          PY
+
+      - name: Build N-GBA native GUI
+        shell: bash
+        run: |
+          set -e
+
           symbian app build --project "$PROJECT"
-          test -s "$PROJECT/.symbian/build/ngba_native_gui.exe"
 
-      - name: Inspect E32 imports
-        shell: bash
-        run: |
-          symbian inspect --format e32 \
-            "$PROJECT/.symbian/build/ngba_native_gui.exe" \
-            | tee "$RUNNER_TEMP/ngba-native-gui-e32.txt"
+          EXE="$PROJECT/.symbian/build/ngba_native_gui.exe"
 
-          if [ "${{ matrix.legacy }}" = "true" ]; then
-            if grep -Eiq 'Dll: *(libc|libm|libpthread)\.dll' \
-              "$RUNNER_TEMP/ngba-native-gui-e32.txt"; then
-              echo "Forbidden Open C import detected for legacy ARMv5T"
-              exit 1
-            fi
-            grep -Eiq 'Kernel: *eka2' \
-              "$RUNNER_TEMP/ngba-native-gui-e32.txt"
-            grep -Eiq 'Architecture: *armv5t' \
-              "$RUNNER_TEMP/ngba-native-gui-e32.txt"
+          if [ ! -s "$EXE" ]; then
+            echo "N-GBA executable was not generated."
+            find "$PROJECT/.symbian" -maxdepth 5 -type f || true
+            exit 1
           fi
 
-      - name: Package SIS
+          echo "Executable successfully generated:"
+          ls -lh "$EXE"
+
+      - name: Inspect E32 executable
         shell: bash
         run: |
+          set -e
+
+          EXE="$PROJECT/.symbian/build/ngba_native_gui.exe"
+
+          symbian inspect --format e32 "$EXE" \
+            | tee "$RUNNER_TEMP/ngba-e32-inspection.txt"
+
+          if [ "${{ matrix.legacy }}" = "true" ]; then
+
+            if grep -Eiq \
+              'Dll: *(libc|libm|libpthread)\.dll' \
+              "$RUNNER_TEMP/ngba-e32-inspection.txt"; then
+
+              echo "Forbidden Open C import detected."
+              exit 1
+            fi
+
+            grep -Eiq 'Kernel: *eka2' \
+              "$RUNNER_TEMP/ngba-e32-inspection.txt"
+
+            grep -Eiq 'Architecture: *armv5t' \
+              "$RUNNER_TEMP/ngba-e32-inspection.txt"
+          fi
+
+      - name: Package N-GBA SIS
+        shell: bash
+        run: |
+          set -e
+
           OUT="$PROJECT/.symbian/package"
+          EXE="$PROJECT/.symbian/build/ngba_native_gui.exe"
+
+          mkdir -p "$OUT"
+
           symbian package \
             --project "$PROJECT" \
-            --artifact "$PROJECT/.symbian/build/ngba_native_gui.exe" \
+            --artifact "$EXE" \
             --output "$OUT"
-          test -s "$OUT/ngba_native_gui.sis"
-          symbian inspect --format sis "$OUT/ngba_native_gui.sis"
 
-      - name: Upload SIS and reports
+          SIS="$OUT/ngba_native_gui.sis"
+
+          if [ ! -s "$SIS" ]; then
+            echo "SIS package was not generated."
+            find "$PROJECT/.symbian" -maxdepth 5 -type f || true
+            exit 1
+          fi
+
+          echo "SIS package generated:"
+          ls -lh "$SIS"
+
+      - name: Inspect SIS package
+        shell: bash
+        run: |
+          set -e
+
+          SIS="$PROJECT/.symbian/package/ngba_native_gui.sis"
+
+          symbian inspect --format sis "$SIS" \
+            | tee "$RUNNER_TEMP/ngba-sis-inspection.txt"
+
+      - name: Upload N-GBA build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: N-GBA-Native-GUI-${{ matrix.target }}
+          name: N-GBA-Native-GUI-v2-${{ matrix.target }}
+          if-no-files-found: warn
           path: |
             ${{ runner.temp }}/ngba_native_gui/.symbian/build/
             ${{ runner.temp }}/ngba_native_gui/.symbian/package/
-            ${{ runner.temp }}/ngba-native-gui-e32.txt
-          if-no-files-found: warn
+            ${{ runner.temp }}/ngba-e32-inspection.txt
+            ${{ runner.temp }}/ngba-sis-inspection.txt
