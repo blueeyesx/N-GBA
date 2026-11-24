@@ -7,7 +7,7 @@
 
 namespace {
 
-const TInt KMenuCount = 6;
+const TInt KMenuCount = 7;
 
 const TUint KBackground = 0x00080D18;
 const TUint KPanel      = 0x00121D30;
@@ -21,7 +21,8 @@ const char* const KMenu[KMenuCount] = {
     "RESUME GAME",
     "SAVE STATES",
     "SETTINGS",
-    "ABOUT N-GBA"
+    "ABOUT N-GBA",
+    "EXIT / KELUAR"
 };
 
 void Fill(
@@ -36,9 +37,7 @@ void Fill(
     gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
     gc.SetBrushColor(TRgb(color));
 
-    gc.DrawRect(
-        TRect(x, y, x + width, y + height)
-    );
+    gc.DrawRect(TRect(x, y, x + width, y + height));
 }
 
 void DrawText(
@@ -51,13 +50,8 @@ void DrawText(
     TUint16 buffer[96];
     TInt length = 0;
 
-    while (
-        text[length] != '\0' &&
-        length < 96
-    ) {
-        buffer[length] =
-            static_cast<TUint8>(text[length]);
-
+    while (text[length] != '\0' && length < 96) {
+        buffer[length] = static_cast<TUint8>(text[length]);
         ++length;
     }
 
@@ -77,105 +71,51 @@ void DrawMenu(
     TInt selected,
     const char* message
 ) {
-    gc.SetPenStyle(CGraphicsContext::ENullPen);
-    gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
-
-    // Background
-    Fill(
-        gc,
-        0,
-        0,
-        size.iWidth,
-        size.iHeight,
-        KBackground
-    );
-
-    // Blue top border
-    Fill(
-        gc,
-        0,
-        0,
-        size.iWidth,
-        4,
-        KBlue
-    );
+    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
 
     gc.UseFont(font);
 
-    // Application title
-    DrawText(
-        gc,
-        "N-GBA",
-        12,
-        30,
-        KWhite
-    );
+    DrawText(gc, "N-GBA", 12, 30, KWhite);
+    DrawText(gc, "STELLAR DRAGON", 12, 51, KBlue);
 
-    DrawText(
-        gc,
-        "STELLAR DRAGON",
-        12,
-        51,
-        KBlue
-    );
-
-    // Menu
     const TInt top = 72;
     const TInt rowHeight =
-        size.iHeight >= 300 ? 31 : 25;
+        size.iHeight >= 300 ? 27 : 22;
 
     for (TInt i = 0; i < KMenuCount; ++i) {
-
         const TInt y = top + i * rowHeight;
 
         if (i == selected) {
-
             Fill(
                 gc,
                 8,
                 y,
                 size.iWidth - 16,
-                rowHeight - 3,
+                rowHeight - 2,
                 KBlue
             );
 
-            DrawText(
-                gc,
-                KMenu[i],
-                18,
-                y + 16,
-                KWhite
-            );
-
+            DrawText(gc, KMenu[i], 18, y + 15, KWhite);
         } else {
-
             Fill(
                 gc,
                 8,
                 y,
                 size.iWidth - 16,
-                rowHeight - 3,
+                rowHeight - 2,
                 KPanel
             );
 
-            DrawText(
-                gc,
-                KMenu[i],
-                18,
-                y + 16,
-                KMuted
-            );
+            DrawText(gc, KMenu[i], 18, y + 15, KMuted);
         }
     }
-
-    // Footer message
-    const TInt footerY = size.iHeight - 30;
 
     DrawText(
         gc,
         message,
         8,
-        footerY,
+        size.iHeight - 12,
         KBlue
     );
 
@@ -183,7 +123,6 @@ void DrawMenu(
 }
 
 TInt RunWindowServer() {
-
     RWsSession session;
 
     TInt error = session.Connect();
@@ -198,24 +137,18 @@ TInt RunWindowServer() {
         error = screen.Construct();
 
         if (error == KErrNone) {
-
             CWindowGc gc(&screen);
 
             error = gc.Construct();
 
             if (error == KErrNone) {
-
-                const TSize size =
-                    screen.SizeInPixels();
+                const TSize size = screen.SizeInPixels();
 
                 CFont* font = NULL;
 
                 _LIT(KTypeface, "");
 
-                const TFontSpec fontSpec(
-                    KTypeface,
-                    120
-                );
+                const TFontSpec fontSpec(KTypeface, 120);
 
                 error =
                     screen.GetNearestFontToDesignHeightInTwips(
@@ -224,21 +157,17 @@ TInt RunWindowServer() {
                     );
 
                 if (error == KErrNone) {
-
                     RWindowGroup group(session);
 
                     error = group.Construct(1, ETrue);
 
                     if (error == KErrNone) {
-
                         RWindow window(session);
 
                         error = window.Construct(group, 2);
 
                         if (error == KErrNone) {
-
                             TInt selected = 0;
-
                             TBool running = ETrue;
 
                             const char* message =
@@ -246,11 +175,7 @@ TInt RunWindowServer() {
 
                             group.SetOrdinalPosition(0);
 
-                            window.SetExtent(
-                                TPoint(0, 0),
-                                size
-                            );
-
+                            window.SetExtent(TPoint(0, 0), size);
                             window.SetVisible(ETrue);
                             window.Activate();
 
@@ -264,31 +189,25 @@ TInt RunWindowServer() {
                             session.Flush();
 
                             while (running) {
-
                                 User::WaitForAnyRequest();
 
-                                // Keyboard events
                                 if (events != KRequestPending) {
-
                                     if (events.Int() != KErrNone) {
                                         error = events.Int();
                                         break;
                                     }
 
                                     TWsEvent event;
-
                                     session.GetEvent(event);
 
                                     if (
                                         event.Type() == EEventKey ||
                                         event.Type() == EEventKeyDown
                                     ) {
-
                                         const TUint key =
                                             event.Key()->iCode;
 
                                         if (key == EKeyUpArrow) {
-
                                             selected =
                                                 (selected +
                                                 KMenuCount - 1) %
@@ -299,7 +218,6 @@ TInt RunWindowServer() {
                                         } else if (
                                             key == EKeyDownArrow
                                         ) {
-
                                             selected =
                                                 (selected + 1) %
                                                 KMenuCount;
@@ -310,9 +228,7 @@ TInt RunWindowServer() {
                                             key == EKeyEnter ||
                                             key == EKeyDevice3
                                         ) {
-
                                             switch (selected) {
-
                                                 case 0:
                                                     message =
                                                         "GAME LIBRARY SELECTED";
@@ -342,6 +258,10 @@ TInt RunWindowServer() {
                                                     message =
                                                         "N-GBA GBA EMULATOR";
                                                     break;
+
+                                                case 6:
+                                                    running = EFalse;
+                                                    break;
                                             }
 
                                             window.Invalidate();
@@ -350,7 +270,6 @@ TInt RunWindowServer() {
                                             key == EKeyBackspace ||
                                             key == EKeyEscape
                                         ) {
-
                                             running = EFalse;
                                         }
                                     }
@@ -360,23 +279,17 @@ TInt RunWindowServer() {
                                     }
                                 }
 
-                                // Redraw events
                                 if (redraws != KRequestPending) {
-
                                     if (redraws.Int() != KErrNone) {
                                         error = redraws.Int();
                                         break;
                                     }
 
                                     TWsRedrawEvent redraw;
-
                                     session.GetRedraw(redraw);
 
                                     if (redraw.Handle() == 2) {
-
-                                        window.BeginRedraw(
-                                            redraw.Rect()
-                                        );
+                                        window.BeginRedraw(redraw.Rect());
 
                                         gc.Activate(window);
 
@@ -389,7 +302,6 @@ TInt RunWindowServer() {
                                         );
 
                                         gc.Deactivate();
-
                                         window.EndRedraw();
                                     }
 
@@ -401,7 +313,6 @@ TInt RunWindowServer() {
                                 session.Flush();
                             }
 
-                            // Cancel pending requests
                             session.EventReadyCancel();
                             session.RedrawReadyCancel();
 
@@ -433,7 +344,6 @@ TInt RunWindowServer() {
 } // namespace
 
 int GuiWindowServerMain() {
-
     CTrapCleanup* cleanup = CTrapCleanup::New();
 
     if (cleanup == NULL) {
