@@ -13,6 +13,11 @@ struct TNgbaCpuState
     TBool thumb;
 
     TUint32 cycles;
+
+    // Informasi instruksi terakhir untuk debugging.
+    TUint32 lastAddress;
+    TUint32 lastOpcode;
+    TUint8 lastInstructionSize;
 };
 
 enum TNgbaCpuResult
@@ -23,25 +28,32 @@ enum TNgbaCpuResult
     ENgbaCpuUnsupported = -3
 };
 
-// Mengatur CPU ke keadaan awal.
 void NgbaCpuReset(TNgbaCpuState& aCpu);
 
-// Menjalankan satu instruksi ARM atau Thumb.
 TInt NgbaCpuStep(TNgbaCpuState& aCpu);
 
-// Mengambil nilai register.
 TUint32 NgbaCpuGetRegister(
     const TNgbaCpuState& aCpu,
     TInt aRegister
 );
 
-// Mengambil CPSR.
 TUint32 NgbaCpuGetCpsr(
     const TNgbaCpuState& aCpu
 );
 
-// Memeriksa apakah CPU berada dalam mode Thumb.
 TBool NgbaCpuIsThumb(
+    const TNgbaCpuState& aCpu
+);
+
+TUint32 NgbaCpuGetLastAddress(
+    const TNgbaCpuState& aCpu
+);
+
+TUint32 NgbaCpuGetLastOpcode(
+    const TNgbaCpuState& aCpu
+);
+
+TUint8 NgbaCpuGetLastInstructionSize(
     const TNgbaCpuState& aCpu
 );
 
