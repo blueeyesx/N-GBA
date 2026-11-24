@@ -98,21 +98,31 @@ TInt NgbaLoadRom(
     {
         file.Close();
         fs.Close();
-        return KErrCorrupt;
+        return KErrTooBig;
     }
 
-    TUint8* buffer = new TUint8[fileSize];
+    // Alokasi ROM menggunakan mekanisme leave-safe Symbian.
+    TUint8* buffer = NULL;
 
-    if (buffer == NULL)
+    TRAP(error,
+        buffer = new (ELeave) TUint8[fileSize];
+    );
+
+    if (error != KErrNone || buffer == NULL)
     {
         file.Close();
         fs.Close();
         return KErrNoMemory;
     }
 
+    // Baca ROM langsung ke buffer.
     TPtr8 descriptor(buffer, 0, fileSize);
 
-    error = file.Read(0, descriptor, fileSize);
+    error = file.Read(
+        0,
+        descriptor,
+        fileSize
+    );
 
     file.Close();
     fs.Close();
@@ -129,26 +139,27 @@ TInt NgbaLoadRom(
         return KErrEof;
     }
 
-    // Byte tetap pada header ROM GBA.
+    // Periksa header ROM GBA.
     if (buffer[0xB2] != 0x96)
     {
         delete[] buffer;
         return KErrCorrupt;
     }
 
-    // Kode game berada pada offset 0xAC.
+    // Periksa kode game.
     if (!IsValidGameCode(buffer + 0xAC))
     {
         delete[] buffer;
         return KErrCorrupt;
     }
 
+    // Simpan ROM yang berhasil dibaca.
     gRomData = buffer;
     gRomSize = fileSize;
 
     gGameCode.Copy(buffer + 0xAC, 4);
 
-    // Hubungkan ROM game ke Memory Bus.
+    // Hubungkan ROM ke Memory Bus.
     error = NgbaMemoryInit(
         gRomData,
         gRomSize
@@ -160,8 +171,8 @@ TInt NgbaLoadRom(
         return error;
     }
 
-    // Uji CPU dan RAM dengan program ARM buatan sendiri.
-    // Fungsi ini mengembalikan Memory Bus ke ROM game.
+    // Jalankan pengujian CPU dasar.
+    // Memory Bus dikembalikan ke ROM game setelah pengujian.
     error = NgbaCpuRunSelfTests(
         gRomData,
         gRomSize
