@@ -1,0 +1,17 @@
+[project]
+architecture = "armv5t"
+name = "ngba_native_gui"
+kind = "e32-import-experiment"
+cmake_preset = "symbian-pic"
+uid3 = 0xe0001a01
+
+[package]
+uid = 0xe0001a02
+name = "N-GBA Native GUI"
+vendor = "Stellar Dragon"
+executable_name = "ngba_native_gui.exe"
+version = [0, 1, 0]
+
+[application]
+caption = "N-GBA"
+short_caption = "N-GBA"

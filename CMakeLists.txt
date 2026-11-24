@@ -1,13 +1,13 @@
-cmake_minimum_required(VERSION 3.16)
-project(NGBA_StellarDragon LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_library(ngba_model STATIC src/app.cpp core/gba_core.cpp core/adapter/mock_core.cpp)
-target_include_directories(ngba_model PUBLIC include core ui)
-option(NGBA_HOST_TESTS "Build portable model tests" ON)
-if(NGBA_HOST_TESTS)
- enable_testing()
- add_executable(ngba_model_tests tests/model_tests.cpp)
- target_include_directories(ngba_model_tests PRIVATE include ui)
- add_test(NAME model_tests COMMAND ngba_model_tests)
-endif()
+cmake_minimum_required(VERSION 3.28)
+
+project(ngba_native_gui LANGUAGES CXX ASM)
+
+include(SymbianApp)
+
+symbian_add_executable(ngba_native_gui src/main.cpp)
+
+target_link_libraries(ngba_native_gui PRIVATE
+    Symbian::Stackless
+    Symbian::WindowServer
+    Symbian::Gdi
+)
