@@ -11,10 +11,11 @@
 
 namespace {
 
-const TInt KMainMenuCount = 7;
+const TInt KMainMenuCount = 8;
 const TInt KSettingsMenuCount = 3;
 const TInt KLanguageMenuCount = 4;
 const TInt KFontMenuCount = 4;
+const TInt KLogMenuCount = 2;
 const TInt KMaxRoms = 24;
 
 const TInt KCpuInstructionsPerTick = 100;
@@ -37,7 +38,8 @@ enum TMenuPage {
     ESettingsPage,
     ELanguagePage,
     EFontPage,
-    ERomPage
+    ERomPage,
+    ELogPage
 };
 
 const TUint KBackground = 0x00080D18;
@@ -51,7 +53,221 @@ const TInt KMenuTop = 72;
 _LIT(KLanguageFolder, "C:\\Data\\N-GBA\\");
 _LIT(KLanguageFile, "C:\\Data\\N-GBA\\language.dat");
 _LIT(KFontFile, "C:\\Data\\N-GBA\\font.dat");
+_LIT(KLogFile, "C:\\Data\\N-GBA\\ngba.log");
 _LIT(KRomFolder, "E:\\GBA\\");
+
+// --------------------------------------------------
+// SISTEM LOG
+// --------------------------------------------------
+
+void LogMessage(const TDesC& message)
+{
+    RFs fs;
+
+    TInt error = fs.Connect();
+
+    if (error != KErrNone) {
+        return;
+    }
+
+    error = fs.MkDirAll(KLanguageFolder);
+
+    if (error != KErrNone && error != KErrAlreadyExists) {
+        fs.Close();
+        return;
+    }
+
+    RFile file;
+
+    error = file.Open(
+        fs,
+        KLogFile,
+        EFileWrite | EFileShareAny
+    );
+
+    if (error == KErrNotFound || error == KErrPathNotFound) {
+        error = file.Create(
+            fs,
+            KLogFile,
+            EFileWrite | EFileShareAny
+        );
+    }
+
+    if (error == KErrNone) {
+        TInt position = 0;
+
+        error = file.Seek(ESeekEnd, position);
+
+        if (error == KErrNone) {
+            TBuf8<512> line;
+
+            // Waktu pencatatan.
+            TTime now;
+            now.HomeTime();
+
+            TBuf<32> timeText;
+            now.Format(
+                timeText,
+                _L("%F%Y-%M-%D %H:%T:%S")
+            );
+
+            for (
+                TInt i = 0;
+                i < timeText.Length() && line.Length() < 100;
+                ++i
+            ) {
+                line.Append(
+                    static_cast<TUint8>(timeText[i])
+                );
+            }
+
+            line.Append(_L8(" | "));
+
+            // Isi pesan.
+            for (
+                TInt j = 0;
+                j < message.Length() && line.Length() < 500;
+                ++j
+            ) {
+                const TUint16 character = message[j];
+
+                line.Append(
+                    character <= 255
+                    ? static_cast<TUint8>(character)
+                    : static_cast<TUint8>('?')
+                );
+            }
+
+            line.Append(_L8("\r\n"));
+
+            file.Write(line);
+        }
+
+        file.Close();
+    }
+
+    fs.Close();
+}
+
+void LogCpuDiagnostic(const char* diagnostic)
+{
+    if (diagnostic == NULL || diagnostic[0] == '\0') {
+        return;
+    }
+
+    TBuf<256> message;
+
+    message.Copy(_L("CPU DIAGNOSTIC: "));
+
+    for (
+        TInt i = 0;
+        diagnostic[i] != '\0' && message.Length() < message.MaxLength();
+        ++i
+    ) {
+        message.Append(
+            static_cast<TUint16>(
+                static_cast<TUint8>(diagnostic[i])
+            )
+        );
+    }
+
+    LogMessage(message);
+}
+
+void ClearLogFile()
+{
+    RFs fs;
+
+    TInt error = fs.Connect();
+
+    if (error != KErrNone) {
+        return;
+    }
+
+    RFile file;
+
+    error = file.Replace(
+        fs,
+        KLogFile,
+        EFileWrite | EFileShareExclusive
+    );
+
+    if (error == KErrNone) {
+        file.Close();
+        LogMessage(_L("LOG CLEARED"));
+    }
+    else {
+        LogMessage(_L("FAILED TO CLEAR LOG"));
+    }
+
+    fs.Close();
+}
+
+// Membaca bagian akhir log agar halaman tetap ringan.
+void ReadLogFile(TBuf<512>& output)
+{
+    output.Zero();
+
+    RFs fs;
+
+    if (fs.Connect() != KErrNone) {
+        output.Copy(_L("LOG FILE UNAVAILABLE"));
+        return;
+    }
+
+    RFile file;
+
+    TInt error = file.Open(
+        fs,
+        KLogFile,
+        EFileRead | EFileShareReadersOnly
+    );
+
+    if (error != KErrNone) {
+        output.Copy(_L("BELUM ADA LOG"));
+        fs.Close();
+        return;
+    }
+
+    TInt fileSize = 0;
+
+    error = file.Size(fileSize);
+
+    if (error == KErrNone && fileSize > 0) {
+        const TInt readSize =
+            fileSize > 480 ? 480 : fileSize;
+
+        TInt position = fileSize - readSize;
+
+        error = file.Seek(ESeekStart, position);
+
+        if (error == KErrNone) {
+            TBuf8<480> data;
+
+            error = file.Read(data, readSize);
+
+            if (error == KErrNone) {
+                for (
+                    TInt i = 0;
+                    i < data.Length() &&
+                    output.Length() < output.MaxLength();
+                    ++i
+                ) {
+                    output.Append(
+                        static_cast<TUint16>(data[i])
+                    );
+                }
+            }
+        }
+    }
+
+    file.Close();
+    fs.Close();
+
+    if (output.Length() == 0) {
+        output.Copy(_L("BELUM ADA LOG"));
+    }
+}
 
 // --------------------------------------------------
 // FONT
@@ -254,10 +470,11 @@ TInt LoadRomList(TBuf<KMaxFileName>* names)
     TInt count = 0;
 
     if (error == KErrNone && entries != NULL) {
-        for (TInt i = 0;
-             i < entries->Count() && count < KMaxRoms;
-             ++i) {
-
+        for (
+            TInt i = 0;
+            i < entries->Count() && count < KMaxRoms;
+            ++i
+        ) {
             const TEntry& entry = (*entries)[i];
 
             if (entry.iName.Length() < 4) {
@@ -280,8 +497,10 @@ TInt LoadRomList(TBuf<KMaxFileName>* names)
     delete entries;
     fs.Close();
 
-    if (error == KErrPathNotFound ||
-        error == KErrNotFound) {
+    if (
+        error == KErrPathNotFound ||
+        error == KErrNotFound
+    ) {
         return KErrPathNotFound;
     }
 
@@ -340,7 +559,6 @@ void FormatCpuDiagnostic(
 {
     TInt position = 0;
 
-    // Baris 1: PC, opcode, dan mode CPU.
     AppendDiagnosticText(output, position, "PC:");
     AppendDiagnosticHex(output, position, cpu.lastAddress);
 
@@ -353,7 +571,6 @@ void FormatCpuDiagnostic(
         cpu.lastInstructionSize == 2 ? " THUMB\n" : " ARM\n"
     );
 
-    // Baris 2: R0 dan R1.
     AppendDiagnosticText(output, position, "R0:");
     AppendDiagnosticHex(output, position, cpu.r[0]);
 
@@ -362,7 +579,6 @@ void FormatCpuDiagnostic(
 
     output[position++] = '\n';
 
-    // Baris 3: R2 dan R3.
     AppendDiagnosticText(output, position, "R2:");
     AppendDiagnosticHex(output, position, cpu.r[2]);
 
@@ -371,7 +587,6 @@ void FormatCpuDiagnostic(
 
     output[position++] = '\n';
 
-    // Baris 4: CPSR.
     AppendDiagnosticText(output, position, "CPSR:");
     AppendDiagnosticHex(output, position, cpu.cpsr);
 
@@ -404,6 +619,7 @@ TInt MenuCount(TInt page, TInt romCount)
     if (page == ESettingsPage) return KSettingsMenuCount;
     if (page == ELanguagePage) return KLanguageMenuCount;
     if (page == EFontPage) return KFontMenuCount;
+    if (page == ELogPage) return KLogMenuCount;
 
     if (page == ERomPage) {
         return romCount > 0 ? romCount + 1 : 1;
@@ -431,6 +647,7 @@ const char* MenuText(
                 "SAVE STATE",
                 "PENGATURAN",
                 "TENTANG N-GBA",
+                "LOG",
                 "KELUAR"
             };
             return menu[index];
@@ -443,6 +660,7 @@ const char* MenuText(
             "SAVE STATES",
             "SETTINGS",
             "ABOUT N-GBA",
+            "LOG",
             "EXIT"
         };
         return menu[index];
@@ -508,6 +726,22 @@ const char* MenuText(
 
     if (page == ERomPage) {
         return indonesian ? "KEMBALI" : "BACK";
+    }
+
+    if (page == ELogPage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "HAPUS LOG",
+                "KEMBALI"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "CLEAR LOG",
+            "BACK"
+        };
+        return menu[index];
     }
 
     return "";
@@ -630,6 +864,131 @@ void DrawCpuDiagnostic(
 }
 
 // --------------------------------------------------
+// GAMBAR HALAMAN LOG
+// --------------------------------------------------
+
+void DrawLogPage(
+    CWindowGc& gc,
+    const TSize& size,
+    TInt selected,
+    TInt fontMode,
+    TBool indonesian
+)
+{
+    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
+
+    DrawText(gc, "N-GBA / LOG", 12, 30, KWhite);
+
+    DrawText(
+        gc,
+        "C:\\Data\\N-GBA\\ngba.log",
+        12,
+        51,
+        KBlue
+    );
+
+    TBuf<512> logText;
+    ReadLogFile(logText);
+
+    // Cari posisi awal lima baris paling akhir.
+    TInt starts[5];
+    TInt lengths[5];
+
+    TInt lineCount = 0;
+    TInt lineStart = 0;
+
+    for (TInt i = 0; i <= logText.Length(); ++i) {
+        if (i == logText.Length() || logText[i] == '\n') {
+            if (i > lineStart) {
+                if (lineCount < 5) {
+                    starts[lineCount] = lineStart;
+                    lengths[lineCount] = i - lineStart;
+                    ++lineCount;
+                }
+                else {
+                    for (TInt j = 0; j < 4; ++j) {
+                        starts[j] = starts[j + 1];
+                        lengths[j] = lengths[j + 1];
+                    }
+
+                    starts[4] = lineStart;
+                    lengths[4] = i - lineStart;
+                }
+            }
+
+            lineStart = i + 1;
+        }
+    }
+
+    const TInt lineHeight =
+        fontMode == EFontLarge ? 20 :
+        fontMode == EFontMedium ? 17 : 15;
+
+    TInt y = 79;
+
+    if (lineCount == 0) {
+        DrawText(
+            gc,
+            "LOG KOSONG",
+            12,
+            y,
+            KMuted
+        );
+    }
+    else {
+        for (TInt i = 0; i < lineCount; ++i) {
+            TBuf<100> line;
+
+            TInt length = lengths[i];
+
+            if (length > line.MaxLength()) {
+                length = line.MaxLength();
+            }
+
+            line.Copy(
+                logText.Mid(starts[i], length)
+            );
+
+            DrawRomText(
+                gc,
+                line,
+                8,
+                y,
+                KMuted
+            );
+
+            y += lineHeight;
+        }
+    }
+
+    // Dua tombol di bagian bawah.
+    const TInt rowHeight = MenuRowHeight(size, fontMode);
+
+    for (TInt i = 0; i < KLogMenuCount; ++i) {
+        const TInt buttonY =
+            size.iHeight - (2 - i) * rowHeight - 3;
+
+        Fill(
+            gc,
+            8,
+            buttonY,
+            size.iWidth - 16,
+            rowHeight - 2,
+            i == selected ? KBlue : KPanel
+        );
+
+        DrawText(
+            gc,
+            MenuText(ELogPage, i, indonesian),
+            15,
+            buttonY + rowHeight / 2 + 6,
+            i == selected ? KWhite : KMuted
+        );
+    }
+}
+
+// --------------------------------------------------
 // MENGGAMBAR MENU
 // --------------------------------------------------
 
@@ -648,6 +1007,21 @@ void DrawMenu(
     const char* diagnostic
 )
 {
+    if (page == ELogPage) {
+        gc.UseFont(font);
+
+        DrawLogPage(
+            gc,
+            size,
+            selected,
+            fontMode,
+            indonesian
+        );
+
+        gc.DiscardFont();
+        return;
+    }
+
     Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
     Fill(gc, 0, 0, size.iWidth, 4, KBlue);
 
@@ -683,7 +1057,8 @@ void DrawMenu(
                 y + textOffset,
                 (i == selected) ? KWhite : KMuted
             );
-        } else {
+        }
+        else {
             const TInt textIndex =
                 page == ERomPage ? 0 : i;
 
@@ -717,7 +1092,6 @@ void DrawMenu(
         }
     }
 
-    // Diagnostik CPU ketika instruksi tidak didukung.
     if (diagnostic != NULL && diagnostic[0] != '\0') {
         DrawCpuDiagnostic(
             gc,
@@ -795,8 +1169,33 @@ void ActivateSelected(
                 break;
 
             case 6:
+                page = ELogPage;
+                selected = 1;
+                LogMessage(_L("LOG PAGE OPENED"));
+                message = indonesian
+                    ? "HALAMAN LOG"
+                    : "LOG PAGE";
+                break;
+
+            case 7:
+                LogMessage(_L("APPLICATION EXIT"));
                 running = EFalse;
                 break;
+        }
+    }
+    else if (page == ELogPage) {
+        if (selected == 0) {
+            ClearLogFile();
+
+            message = indonesian
+                ? "LOG DIHAPUS"
+                : "LOG CLEARED";
+
+            LogMessage(_L("LOG CLEARED BY USER"));
+        }
+        else {
+            page = EMainPage;
+            selected = 6;
         }
     }
     else if (page == ESettingsPage) {
@@ -831,6 +1230,12 @@ void ActivateSelected(
             page = ESettingsPage;
             selected = 0;
 
+            LogMessage(
+                saveError == KErrNone
+                ? _L("LANGUAGE SETTING SAVED")
+                : _L("LANGUAGE SETTING FAILED")
+            );
+
             message = saveError == KErrNone
                 ? (indonesian ? "BAHASA TERSIMPAN" : "LANGUAGE SAVED")
                 : (indonesian ? "GAGAL SIMPAN BAHASA" : "LANGUAGE SAVE FAILED");
@@ -850,6 +1255,12 @@ void ActivateSelected(
             page = ESettingsPage;
             selected = 1;
 
+            LogMessage(
+                saveError == KErrNone
+                ? _L("FONT SETTING SAVED")
+                : _L("FONT SETTING FAILED")
+            );
+
             message = saveError == KErrNone
                 ? (indonesian ? "UKURAN FONT TERSIMPAN" : "FONT SIZE SAVED")
                 : (indonesian ? "GAGAL SIMPAN FONT" : "FONT SAVE FAILED");
@@ -861,7 +1272,6 @@ void ActivateSelected(
     }
     else if (page == ERomPage) {
         if (romCount > 0 && selected < romCount) {
-
             StopCpuTimer(
                 cpuTimer,
                 cpuTimerStatus,
@@ -874,6 +1284,11 @@ void ActivateSelected(
             romPath.Copy(KRomFolder);
             romPath.Append(romNames[selected]);
 
+            TBuf<128> logEntry;
+            logEntry.Copy(_L("ROM LOAD START: "));
+            logEntry.Append(romNames[selected]);
+            LogMessage(logEntry);
+
             TUint32 loadedSize = 0;
             TBuf8<4> gameCode;
 
@@ -885,6 +1300,11 @@ void ActivateSelected(
 
             if (loadError == KErrNone) {
                 NgbaCpuReset(cpu);
+
+                TBuf<128> successEntry;
+                successEntry.Copy(_L("ROM LOADED: "));
+                successEntry.Append(romNames[selected]);
+                LogMessage(successEntry);
 
                 if (timerReady) {
                     cpuActive = ETrue;
@@ -903,20 +1323,30 @@ void ActivateSelected(
                         : "ROM LOADED - CPU RUNNING";
                 }
                 else {
+                    LogMessage(_L("CPU TIMER CREATION FAILED"));
+
                     message = indonesian
                         ? "ROM DIMUAT - TIMER CPU GAGAL"
                         : "ROM LOADED - CPU TIMER FAILED";
                 }
             }
-            else if (loadError == KErrNoMemory) {
-                message = indonesian
-                    ? "RAM TIDAK CUKUP"
-                    : "NOT ENOUGH MEMORY";
-            }
             else {
-                message = indonesian
-                    ? "GAGAL MEMUAT ROM"
-                    : "ROM LOAD FAILED";
+                TBuf<64> errorEntry;
+                errorEntry.Copy(_L("ROM LOAD FAILED, ERROR: "));
+
+                errorEntry.AppendNum(loadError);
+                LogMessage(errorEntry);
+
+                if (loadError == KErrNoMemory) {
+                    message = indonesian
+                        ? "RAM TIDAK CUKUP"
+                        : "NOT ENOUGH MEMORY";
+                }
+                else {
+                    message = indonesian
+                        ? "GAGAL MEMUAT ROM"
+                        : "ROM LOAD FAILED";
+                }
             }
         }
         else {
@@ -954,6 +1384,10 @@ void GoBack(
         page = EMainPage;
         selected = 0;
     }
+    else if (page == ELogPage) {
+        page = EMainPage;
+        selected = 6;
+    }
     else {
         page = EMainPage;
         selected = 4;
@@ -973,6 +1407,8 @@ TInt RunWindowServer()
     if (error != KErrNone) {
         return error;
     }
+
+    LogMessage(_L("APPLICATION STARTED"));
 
     {
         CWsScreenDevice screen(session);
@@ -998,6 +1434,7 @@ TInt RunWindowServer()
 
                 if (romNames == NULL) {
                     error = KErrNoMemory;
+                    LogMessage(_L("ROM LIST MEMORY ALLOCATION FAILED"));
                 }
                 else {
                     TInt romCount = 0;
@@ -1032,11 +1469,9 @@ TInt RunWindowServer()
                                     ? "ATAS BAWAH PILIH KEMBALI"
                                     : "UP DOWN SELECT BACK";
 
-                                // Buffer diagnostik CPU.
                                 char diagnostic[192];
                                 diagnostic[0] = '\0';
 
-                                // Status CPU.
                                 TNgbaCpuState cpu;
                                 NgbaCpuReset(cpu);
 
@@ -1050,6 +1485,10 @@ TInt RunWindowServer()
 
                                 const TBool timerReady =
                                     (timerError == KErrNone);
+
+                                if (!timerReady) {
+                                    LogMessage(_L("CPU TIMER CREATION FAILED"));
+                                }
 
                                 TRequestStatus cpuTimerStatus;
 
@@ -1082,6 +1521,7 @@ TInt RunWindowServer()
                                     if (events != KRequestPending) {
                                         if (events.Int() != KErrNone) {
                                             error = events.Int();
+                                            LogMessage(_L("WINDOW EVENT ERROR"));
                                             break;
                                         }
 
@@ -1110,7 +1550,36 @@ TInt RunWindowServer()
                                                     const TInt y =
                                                         pointer->iPosition.iY;
 
-                                                    if (y >= KMenuTop) {
+                                                    if (page == ELogPage) {
+                                                        const TInt firstButtonY =
+                                                            size.iHeight -
+                                                            rowHeight * 2 - 3;
+
+                                                        if (y >= firstButtonY) {
+                                                            const TInt row =
+                                                                (y - firstButtonY) /
+                                                                rowHeight;
+
+                                                            if (
+                                                                row >= 0 &&
+                                                                row < KLogMenuCount
+                                                            ) {
+                                                                if (row == lastTappedRow) {
+                                                                    key = EKeyEnter;
+                                                                    lastTappedRow = -1;
+                                                                }
+                                                                else {
+                                                                    selected = row;
+                                                                    lastTappedRow = row;
+                                                                    window.Invalidate();
+                                                                }
+                                                            }
+                                                        }
+                                                        else {
+                                                            lastTappedRow = -1;
+                                                        }
+                                                    }
+                                                    else if (y >= KMenuTop) {
                                                         const TInt row =
                                                             (y - KMenuTop) /
                                                             rowHeight;
@@ -1201,6 +1670,11 @@ TInt RunWindowServer()
                                                     if (scanResult >= 0) {
                                                         romCount = scanResult;
 
+                                                        TBuf<64> scanLog;
+                                                        scanLog.Copy(_L("ROM SCAN COMPLETE: "));
+                                                        scanLog.AppendNum(romCount);
+                                                        LogMessage(scanLog);
+
                                                         if (romCount == 0) {
                                                             message = indonesian
                                                                 ? "ROM GBA TIDAK DITEMUKAN"
@@ -1214,6 +1688,8 @@ TInt RunWindowServer()
                                                     }
                                                     else {
                                                         romCount = 0;
+
+                                                        LogMessage(_L("ROM FOLDER NOT FOUND"));
 
                                                         message = indonesian
                                                             ? "BUAT FOLDER E:\\GBA"
@@ -1236,6 +1712,8 @@ TInt RunWindowServer()
                                                         font = newFont;
                                                     }
                                                     else {
+                                                        LogMessage(_L("FONT LOAD FAILED"));
+
                                                         message = indonesian
                                                             ? "GAGAL MEMUAT FONT"
                                                             : "FONT LOAD FAILED";
@@ -1262,6 +1740,7 @@ TInt RunWindowServer()
                                                     );
 
                                                     cpuActive = EFalse;
+                                                    LogMessage(_L("CPU EXECUTION PAUSED"));
                                                 }
 
                                                 window.Invalidate();
@@ -1285,6 +1764,8 @@ TInt RunWindowServer()
 
                                         if (cpuTimerStatus.Int() != KErrNone) {
                                             cpuActive = EFalse;
+
+                                            LogMessage(_L("CPU TIMER STOPPED"));
 
                                             message = indonesian
                                                 ? "TIMER CPU BERHENTI"
@@ -1316,16 +1797,33 @@ TInt RunWindowServer()
                                                         diagnostic
                                                     );
 
+                                                    LogMessage(
+                                                        _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
+                                                    );
+
+                                                    LogCpuDiagnostic(diagnostic);
+
                                                     message = indonesian
                                                         ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
                                                         : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
                                                 }
                                                 else if (stepResult == ENgbaCpuRomEnd) {
+                                                    LogMessage(_L("CPU REACHED ROM END"));
+
                                                     message = indonesian
                                                         ? "CPU MENCAPAI AKHIR ROM"
                                                         : "CPU REACHED ROM END";
                                                 }
                                                 else {
+                                                    LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
+
+                                                    FormatCpuDiagnostic(
+                                                        cpu,
+                                                        diagnostic
+                                                    );
+
+                                                    LogCpuDiagnostic(diagnostic);
+
                                                     message = indonesian
                                                         ? "CPU BERHENTI - KESALAHAN"
                                                         : "CPU STOPPED - ERROR";
@@ -1353,6 +1851,7 @@ TInt RunWindowServer()
                                     if (redraws != KRequestPending) {
                                         if (redraws.Int() != KErrNone) {
                                             error = redraws.Int();
+                                            LogMessage(_L("WINDOW REDRAW ERROR"));
                                             break;
                                         }
 
@@ -1425,6 +1924,9 @@ TInt RunWindowServer()
 
                         screen.ReleaseFont(font);
                     }
+                    else {
+                        LogMessage(_L("FONT INITIALIZATION FAILED"));
+                    }
 
                     delete[] romNames;
                 }
@@ -1433,6 +1935,8 @@ TInt RunWindowServer()
     }
 
     NgbaReleaseRom();
+
+    LogMessage(_L("APPLICATION SHUTDOWN"));
 
     session.Close();
     return error;
@@ -1461,6 +1965,7 @@ int GuiWindowServerMain()
 
     if (trapError != KErrNone) {
         result = trapError;
+        LogMessage(_L("APPLICATION LEAVE ERROR"));
     }
 
     delete cleanup;
