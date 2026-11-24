@@ -1,5 +1,5 @@
 
-name: N-GBA - Symbian Platform SDK
+name: N-GBA - Legacy EKA2 Diagnostic
 
 on:
   workflow_dispatch:
@@ -20,12 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: S60v3-ARMv5T
+          - target: S60v3-FP1-FP2-ARMv5T
             architecture: armv5t
-            app: ngba_diag_s60v3
-          - target: Anna-ARMv6
+            app: ngba_diag_s60v3_legacy
+            legacy: true
+
+          - target: Symbian-Anna-ARMv6
             architecture: armv6
             app: ngba_diag_anna
+            legacy: false
 
     steps:
       - name: Checkout N-GBA
@@ -36,74 +39,169 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Symbian Platform tools
+      - name: Install Symbian Platform
         shell: bash
         run: |
           python -m pip install --upgrade pip
           python -m pip install symbian-platform==0.3.0
-          symbian --help
           symbian doctor
 
-      - name: Download native SDK 0.3.0
+      - name: Download SDK
         shell: bash
         run: |
-          curl -fL \
+          curl -fL --retry 3 \
             "https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz" \
-            -o symbian-sdk.tar.gz
+            -o "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
-          test -s symbian-sdk.tar.gz
+          test -s "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
-      - name: Install native SDK
+      - name: Install SDK
         shell: bash
         run: |
-          symbian sdk install \
-            "$HOME/dev/symbian-sdk" \
-            --archive symbian-sdk.tar.gz
+          symbian sdk install "$HOME/dev/symbian-sdk" \
+            --archive "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
-      - name: Check ARM toolchain
-        shell: bash
-        run: |
           symbian toolchain probe
 
       - name: Create diagnostic project
         shell: bash
         run: |
-          rm -rf "$RUNNER_TEMP/${{ matrix.app }}"
-
-          symbian init \
-            "$RUNNER_TEMP/${{ matrix.app }}" \
+          symbian init "$RUNNER_TEMP/${{ matrix.app }}" \
             --name "${{ matrix.app }}" \
             --architecture "${{ matrix.architecture }}" \
             --non-interactive
 
-      - name: Build diagnostic application
+          test -f "$RUNNER_TEMP/${{ matrix.app }}/CMakeLists.txt"
+          test -f "$RUNNER_TEMP/${{ matrix.app }}/symbian.toml"
+
+      - name: Enable Legacy EKA2 runtime
+        if: matrix.legacy
+        shell: bash
+        run: |
+          python - "$RUNNER_TEMP/${{ matrix.app }}/CMakeLists.txt" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          source = path.read_text()
+          marker = "include(SymbianApp)"
+
+          if source.count(marker) != 1:
+              raise SystemExit(
+                  "Unexpected generated CMakeLists.txt"
+              )
+
+          setting = (
+              'set(SYMBIAN_RUNTIME_LEGACY_EKA2 ON CACHE BOOL '
+              '"ARMv5T older-ROM runtime" FORCE)\n'
+          )
+
+          path.write_text(
+              source.replace(marker, setting + marker, 1)
+          )
+
+          print(path.read_text())
+          PY
+
+      - name: Build application
         shell: bash
         run: |
           symbian app build \
             --project "$RUNNER_TEMP/${{ matrix.app }}"
 
-      - name: Inspect E32 executable
+      - name: Inspect E32 and DLL imports
         shell: bash
         run: |
-          symbian inspect --format e32 \
-            "$RUNNER_TEMP/${{ matrix.app }}/.symbian/build/${{ matrix.app }}.exe"
+          set -o pipefail
 
-      - name: Create SIS package
+          EXE="$RUNNER_TEMP/${{ matrix.app }}/.symbian/build/${{ matrix.app }}.exe"
+          REPORT="$RUNNER_TEMP/${{ matrix.app }}-e32-report.txt"
+
+          test -s "$EXE"
+
+          symbian inspect --format e32 "$EXE" \
+            | tee "$REPORT"
+
+          python - "$REPORT" "${{ matrix.legacy }}" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          report = pathlib.Path(sys.argv[1]).read_text(
+              errors="replace"
+          )
+          legacy = sys.argv[2].lower() == "true"
+
+          dlls = re.findall(
+              r"^\s*Dll:\s*(\S+)\s*$",
+              report,
+              re.M
+          )
+
+          print("\nDLL IMPORT SUMMARY")
+          for dll in sorted(set(dlls), key=str.lower):
+              print(" -", dll)
+
+          if not dlls:
+              raise SystemExit("DLL import table not found")
+
+          if legacy:
+              forbidden = {
+                  "libc.dll",
+                  "libm.dll",
+                  "libpthread.dll"
+              }
+
+              found = sorted(
+                  {dll.lower() for dll in dlls} & forbidden
+              )
+
+              if found:
+                  raise SystemExit(
+                      "Legacy profile still imports: "
+                      + ", ".join(found)
+                  )
+
+              if not re.search(
+                  r"Kernel:\s*eka2", report, re.I
+              ):
+                  raise SystemExit("Not an EKA2 executable")
+
+              if not re.search(
+                  r"Architecture:\s*armv5t", report, re.I
+              ):
+                  raise SystemExit("Not an ARMv5T executable")
+
+              print(
+                  "PASS: ARMv5T EKA2, "
+                  "without Open C DLL imports"
+              )
+          PY
+
+      - name: Package SIS
         shell: bash
         run: |
+          PROJECT="$RUNNER_TEMP/${{ matrix.app }}"
+          EXE="$PROJECT/.symbian/build/${{ matrix.app }}.exe"
+          OUT="$PROJECT/.symbian/package"
+
           symbian package \
-            --project "$RUNNER_TEMP/${{ matrix.app }}" \
-            --artifact "$RUNNER_TEMP/${{ matrix.app }}/.symbian/build/${{ matrix.app }}.exe" \
-            --output "$RUNNER_TEMP/${{ matrix.app }}/.symbian/package"
+            --project "$PROJECT" \
+            --artifact "$EXE" \
+            --output "$OUT"
+
+          test -s "$OUT/${{ matrix.app }}.sis"
 
           symbian inspect --format sis \
-            "$RUNNER_TEMP/${{ matrix.app }}/.symbian/package/${{ matrix.app }}.sis"
+            "$OUT/${{ matrix.app }}.sis"
 
-      - name: Upload SIS and E32
+      - name: Upload diagnostic artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: N-GBA-Diagnostic-${{ matrix.target }}
           path: |
-            ${{ runner.temp }}/${{ matrix.app }}/.symbian/build/*.exe
-            ${{ runner.temp }}/${{ matrix.app }}/.symbian/package/*.sis
-          if-no-files-found: error
+            ${{ runner.temp }}/${{ matrix.app }}/.symbian/build/
+            ${{ runner.temp }}/${{ matrix.app }}/.symbian/package/
+            ${{ runner.temp }}/${{ matrix.app }}-e32-report.txt
+          if-no-files-found: warn
