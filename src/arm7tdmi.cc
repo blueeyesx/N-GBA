@@ -81,6 +81,18 @@ namespace
                (value << (32 - amount));
     }
 
+    // ARM7TDMI word load:
+    // alamat disejajarkan ke 4 byte, kemudian hasil dirotasi
+    // berdasarkan dua bit alamat terbawah.
+    TUint32 ReadWordRotated(TUint32 address)
+    {
+        const TUint32 alignedAddress = address & ~3u;
+        const TUint32 value = NgbaMemoryRead32(alignedAddress);
+        const TInt rotation = static_cast<TInt>(address & 3u) * 8;
+
+        return RotateRight(value, rotation);
+    }
+
     TUint32 ShiftValue(
         TUint32 value,
         TInt type,
@@ -126,7 +138,6 @@ namespace
             if (amount >= 32)
             {
                 carry = (value & 0x80000000u) != 0;
-
                 return carry ? 0xFFFFFFFFu : 0;
             }
 
@@ -151,12 +162,16 @@ namespace
         return RotateRight(value, amount);
     }
 
+    // carryIn:
+    // - operasi tambah: carry yang masuk (ADC)
+    // - operasi kurang: borrow yang masuk (SBC/RSC)
     void SetArithmeticFlags(
         TNgbaCpuState& cpu,
         TUint32 left,
         TUint32 right,
         TUint32 result,
-        TBool subtract
+        TBool subtract,
+        TUint32 carryIn = 0
     )
     {
         SetNzFlags(cpu, result);
@@ -164,7 +179,10 @@ namespace
 
         if (subtract)
         {
-            if (left >= right)
+            const TUint64 subtrahend =
+                static_cast<TUint64>(right) + carryIn;
+
+            if (static_cast<TUint64>(left) >= subtrahend)
                 cpu.cpsr |= KFlagC;
 
             const TUint32 overflow =
@@ -177,7 +195,8 @@ namespace
         {
             const TUint64 wide =
                 static_cast<TUint64>(left) +
-                static_cast<TUint64>(right);
+                static_cast<TUint64>(right) +
+                static_cast<TUint64>(carryIn);
 
             if (wide >> 32)
                 cpu.cpsr |= KFlagC;
@@ -214,18 +233,15 @@ namespace
         }
 
         const TInt rm = instruction & 15;
-
         TUint32 value = ReadRegister(cpu, rm, address);
-
         const TInt type = (instruction >> 5) & 3;
 
         if (instruction & (1u << 4))
         {
             const TInt rs = (instruction >> 8) & 15;
-            const TInt amount =
-                static_cast<TInt>(
-                    ReadRegister(cpu, rs, address) & 0xFFu
-                );
+            const TInt amount = static_cast<TInt>(
+                ReadRegister(cpu, rs, address) & 0xFFu
+            );
 
             if (amount == 0)
                 return value;
@@ -261,16 +277,15 @@ namespace
         return ShiftValue(value, type, amount, carry);
     }
 
-    // BIOS HLE SWI 0Bh: CpuSet.
-    //
-    // R0 = source address
-    // R1 = destination address
-    // R2 = control
-    //
-    // Bit 24: 0 = 16-bit, 1 = 32-bit
-    // Bit 26: 0 = copy, 1 = fixed-source fill
-    // Bits 0-20: number of transfer units
+    // BIOS HLE SWI 01h: RegisterRamReset.
+    // BIOS asli memiliki perilaku reset memori yang lebih lengkap.
+    TInt ExecuteBiosRegisterRamReset(TNgbaCpuState& cpu)
+    {
+        NgbaMemoryRegisterRamReset(cpu.r[0]);
+        return ENgbaCpuOk;
+    }
 
+    // BIOS HLE SWI 0Bh: CpuSet.
     TInt ExecuteBiosCpuSet(TNgbaCpuState& cpu)
     {
         const TUint32 source = cpu.r[0];
@@ -338,16 +353,6 @@ namespace
     }
 
     // BIOS HLE SWI 0Ch: CpuFastSet.
-    //
-    // R0 = source address
-    // R1 = destination address
-    // R2 = control
-    //
-    // Bit 24: 0 = copy, 1 = fixed-source fill
-    // Bits 0-20: number of 32-bit words
-    //
-    // CpuFastSet selalu menggunakan transfer 32-bit.
-
     TInt ExecuteBiosCpuFastSet(TNgbaCpuState& cpu)
     {
         TUint32 source = cpu.r[0] & ~3u;
@@ -357,8 +362,10 @@ namespace
         const TBool fixedSource =
             (control & (1u << 24)) != 0;
 
-        const TUint32 count =
-            control & 0x001FFFFFu;
+        TUint32 count = control & 0x001FFFFFu;
+
+        // CpuFastSet mentransfer dalam blok 8 word.
+        count = (count + 7u) & ~7u;
 
         if (count == 0)
             return ENgbaCpuOk;
@@ -603,16 +610,14 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
+        // Nomor SWI berada pada 24 bit terbawah.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
-                (instruction >> 16) & 0xFFu;
+                instruction & 0x00FFFFFFu;
 
             if (swiNumber == 0x01u)
-            {
-                NgbaMemoryRegisterRamReset(cpu.r[0]);
-                return ENgbaCpuOk;
-            }
+                return ExecuteBiosRegisterRamReset(cpu);
 
             if (swiNumber == 0x0Bu)
                 return ExecuteBiosCpuSet(cpu);
@@ -693,7 +698,7 @@ namespace
             {
                 const TUint32 value = byte
                     ? NgbaMemoryRead8(memoryAddress)
-                    : NgbaMemoryRead32(memoryAddress);
+                    : ReadWordRotated(memoryAddress);
 
                 if (rd == 15)
                     cpu.r[15] = value & ~3u;
@@ -705,7 +710,10 @@ namespace
                 const TUint32 value = ReadRegister(cpu, rd, address);
 
                 if (byte)
-                    NgbaMemoryWrite8(memoryAddress, static_cast<TUint8>(value));
+                    NgbaMemoryWrite8(
+                        memoryAddress,
+                        static_cast<TUint8>(value)
+                    );
                 else
                     NgbaMemoryWrite32(memoryAddress, value);
             }
@@ -743,66 +751,80 @@ namespace
             TBool writeResult = ETrue;
             TBool arithmetic = EFalse;
             TBool subtract = EFalse;
+            TUint32 carryIn = 0;
 
             switch (opcode)
             {
             case 0: result = left & right; break;
             case 1: result = left ^ right; break;
+
             case 2:
                 result = left - right;
                 arithmetic = ETrue;
                 subtract = ETrue;
                 break;
+
             case 3:
                 result = right - left;
                 arithmetic = ETrue;
                 subtract = ETrue;
                 break;
+
             case 4:
                 result = left + right;
                 arithmetic = ETrue;
                 break;
+
             case 5:
-                result = left + right +
-                    ((cpu.cpsr & KFlagC) ? 1u : 0u);
+                carryIn = (cpu.cpsr & KFlagC) ? 1u : 0u;
+                result = left + right + carryIn;
                 arithmetic = ETrue;
                 break;
+
             case 6:
-                result = left - right -
-                    ((cpu.cpsr & KFlagC) ? 0u : 1u);
+                carryIn = (cpu.cpsr & KFlagC) ? 0u : 1u;
+                result = left - right - carryIn;
                 arithmetic = ETrue;
                 subtract = ETrue;
                 break;
+
             case 7:
-                result = right - left -
-                    ((cpu.cpsr & KFlagC) ? 0u : 1u);
+                carryIn = (cpu.cpsr & KFlagC) ? 0u : 1u;
+                result = right - left - carryIn;
                 arithmetic = ETrue;
                 subtract = ETrue;
                 break;
+
             case 8:
                 result = left & right;
                 writeResult = EFalse;
                 break;
+
             case 9:
                 result = left ^ right;
                 writeResult = EFalse;
                 break;
+
             case 10:
                 result = left - right;
                 arithmetic = ETrue;
                 subtract = ETrue;
                 writeResult = EFalse;
                 break;
+
             case 11:
                 result = left + right;
                 arithmetic = ETrue;
                 writeResult = EFalse;
                 break;
+
             case 12: result = left | right; break;
             case 13: result = right; break;
             case 14: result = left & ~right; break;
             case 15: result = ~right; break;
-            default: return ENgbaCpuUnsupported;
+
+            default:
+                return ENgbaCpuUnsupported;
             }
 
             if (writeResult)
@@ -816,7 +838,16 @@ namespace
             if (setFlags || !writeResult)
             {
                 if (arithmetic)
-                    SetArithmeticFlags(cpu, left, right, result, subtract);
+                {
+                    SetArithmeticFlags(
+                        cpu,
+                        left,
+                        (opcode == 7) ? left : right,
+                        result,
+                        subtract,
+                        carryIn
+                    );
+                }
                 else
                 {
                     SetNzFlags(cpu, result);
@@ -879,7 +910,8 @@ namespace
                 ? ((instruction >> 6) & 7)
                 : cpu.r[(instruction >> 6) & 7];
 
-            const TUint32 result = subtract ? left - right : left + right;
+            const TUint32 result =
+                subtract ? left - right : left + right;
 
             cpu.r[rd] = result;
             SetArithmeticFlags(cpu, left, right, result, subtract);
@@ -951,49 +983,28 @@ namespace
                 const TUint32 oldCarry =
                     (cpu.cpsr & KFlagC) ? 1u : 0u;
 
-                const TUint64 wide =
-                    static_cast<TUint64>(left) + right + oldCarry;
+                result = left + right + oldCarry;
 
-                result = static_cast<TUint32>(wide);
+                SetArithmeticFlags(
+                    cpu, left, right, result, EFalse, oldCarry
+                );
 
-                SetNzFlags(cpu, result);
-                cpu.cpsr &= ~(KFlagC | KFlagV);
-
-                if (wide >> 32)
-                    cpu.cpsr |= KFlagC;
-
-                const TUint32 overflow =
-                    ~(left ^ right) & (left ^ result);
-
-                if (overflow & 0x80000000u)
-                    cpu.cpsr |= KFlagV;
-
+                cpu.r[rd] = result;
                 return ENgbaCpuOk;
             }
 
             case 6:
             {
-                const TUint32 oldCarry =
-                    (cpu.cpsr & KFlagC) ? 1u : 0u;
+                const TUint32 borrow =
+                    (cpu.cpsr & KFlagC) ? 0u : 1u;
 
-                const TUint64 subtrahend =
-                    static_cast<TUint64>(right) +
-                    (oldCarry ? 0u : 1u);
+                result = left - right - borrow;
 
-                result = left - static_cast<TUint32>(subtrahend);
+                SetArithmeticFlags(
+                    cpu, left, right, result, ETrue, borrow
+                );
 
-                SetNzFlags(cpu, result);
-                cpu.cpsr &= ~(KFlagC | KFlagV);
-
-                if (static_cast<TUint64>(left) >= subtrahend)
-                    cpu.cpsr |= KFlagC;
-
-                const TUint32 overflow =
-                    (left ^ right) & (left ^ result);
-
-                if (overflow & 0x80000000u)
-                    cpu.cpsr |= KFlagV;
-
+                cpu.r[rd] = result;
                 return ENgbaCpuOk;
             }
 
@@ -1073,7 +1084,7 @@ namespace
                 break;
 
             case 4:
-                cpu.r[rd] = NgbaMemoryRead32(memoryAddress);
+                cpu.r[rd] = ReadWordRotated(memoryAddress);
                 break;
 
             case 5:
@@ -1128,7 +1139,7 @@ namespace
             {
                 cpu.r[rd] = byte
                     ? NgbaMemoryRead8(memoryAddress)
-                    : NgbaMemoryRead32(memoryAddress);
+                    : ReadWordRotated(memoryAddress);
             }
             else
             {
@@ -1174,7 +1185,7 @@ namespace
             const TUint32 memoryAddress = cpu.r[13] + offset;
 
             if (load)
-                cpu.r[rd] = NgbaMemoryRead32(memoryAddress);
+                cpu.r[rd] = ReadWordRotated(memoryAddress);
             else
                 NgbaMemoryWrite32(memoryAddress, cpu.r[rd]);
 
@@ -1318,10 +1329,7 @@ namespace
             const TUint32 swiNumber = instruction & 0xFFu;
 
             if (swiNumber == 0x01u)
-            {
-                NgbaMemoryRegisterRamReset(cpu.r[0]);
-                return ENgbaCpuOk;
-            }
+                return ExecuteBiosRegisterRamReset(cpu);
 
             if (swiNumber == 0x0Bu)
                 return ExecuteBiosCpuSet(cpu);
@@ -1342,10 +1350,13 @@ namespace
 
             if (ConditionPassed(cpu.cpsr, condition))
             {
-                TInt32 offset = static_cast<TInt8>(instruction & 0xFFu);
+                TInt32 offset =
+                    static_cast<TInt8>(instruction & 0xFFu);
+
                 offset *= 2;
 
-                cpu.r[15] = address + 4 + static_cast<TUint32>(offset);
+                cpu.r[15] = address + 4 +
+                            static_cast<TUint32>(offset);
             }
 
             return ENgbaCpuOk;
@@ -1354,13 +1365,16 @@ namespace
         // Unconditional branch.
         if ((instruction & 0xF800u) == 0xE000u)
         {
-            TInt32 offset = static_cast<TInt16>(instruction & 0x07FFu);
+            TInt32 offset =
+                static_cast<TInt16>(instruction & 0x07FFu);
 
             if (offset & 0x0400)
                 offset |= static_cast<TInt16>(0xF800);
 
             offset *= 2;
-            cpu.r[15] = address + 4 + static_cast<TUint32>(offset);
+
+            cpu.r[15] = address + 4 +
+                        static_cast<TUint32>(offset);
 
             return ENgbaCpuOk;
         }
@@ -1368,7 +1382,8 @@ namespace
         // Long branch with link: first half.
         if ((instruction & 0xF800u) == 0xF000u)
         {
-            TInt32 offset = static_cast<TInt32>(instruction & 0x07FFu);
+            TInt32 offset =
+                static_cast<TInt32>(instruction & 0x07FFu);
 
             if (offset & 0x0400)
                 offset |= static_cast<TInt32>(0xFFFFF800u);
@@ -1418,26 +1433,33 @@ namespace
             if (opcode == 0)
             {
                 if (rd == 15)
+                {
+                    cpu.thumb = ETrue;
                     cpu.r[15] = value & ~1u;
+                }
                 else
                     cpu.r[rd] = value;
             }
             else if (opcode == 1)
             {
                 const TUint32 result = cpu.r[rd] - value;
-                SetArithmeticFlags(cpu, cpu.r[rd], value, result, ETrue);
+
+                SetArithmeticFlags(
+                    cpu, cpu.r[rd], value, result, ETrue
+                );
             }
             else if (opcode == 2)
             {
                 if (rd == 15)
-                    cpu.r[15] = value & ~1u;
+                {
+                    cpu.thumb = ETrue;
+                    cpu.r[15] = (cpu.r[15] + value) & ~1u;
+                }
                 else
                     cpu.r[rd] += value;
             }
             else
-            {
                 return ENgbaCpuUnsupported;
-            }
 
             return ENgbaCpuOk;
         }
@@ -1453,8 +1475,15 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     for (TInt i = 0; i < 16; ++i)
         cpu.r[i] = 0;
 
+    // Mulai langsung dari entry point cartridge.
     cpu.r[15] = KRomBase;
-    cpu.cpsr = 0x000000D3u;
+
+    // Stack awal di IWRAM.
+    cpu.r[13] = 0x03007F00u;
+
+    // System mode, ARM state, IRQ dan FIQ dinonaktifkan.
+    // Ini merupakan inisialisasi HLE sederhana, bukan boot BIOS asli.
+    cpu.cpsr = 0x000000DFu;
 
     cpu.halted = EFalse;
     cpu.thumb = EFalse;
