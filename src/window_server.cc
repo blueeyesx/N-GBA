@@ -1,5 +1,6 @@
 
 #include "window_server.h"
+#include "rom_loader.h"
 
 #include <e32base.h>
 #include <e32std.h>
@@ -670,9 +671,34 @@ void ActivateSelected(
     }
     else if (page == ERomPage) {
         if (romCount > 0 && selected < romCount) {
-            message = indonesian
-                ? "ROM DIPILIH - CORE BELUM AKTIF"
-                : "ROM SELECTED - CORE NOT READY";
+            TFileName romPath;
+            romPath.Copy(KRomFolder);
+            romPath.Append(romNames[selected]);
+
+            TUint32 loadedSize = 0;
+            TBuf8<4> gameCode;
+
+            const TInt loadError = NgbaLoadRom(
+                romPath,
+                loadedSize,
+                gameCode
+            );
+
+            if (loadError == KErrNone) {
+                message = indonesian
+                    ? "ROM DIMUAT - CPU BELUM AKTIF"
+                    : "ROM LOADED - CPU NOT ACTIVE";
+            }
+            else if (loadError == KErrNoMemory) {
+                message = indonesian
+                    ? "RAM TIDAK CUKUP"
+                    : "NOT ENOUGH MEMORY";
+            }
+            else {
+                message = indonesian
+                    ? "GAGAL MEMUAT ROM"
+                    : "ROM LOAD FAILED";
+            }
         }
         else {
             page = EMainPage;
@@ -1043,6 +1069,9 @@ TInt RunWindowServer()
             }
         }
     }
+
+    // Bebaskan ROM yang sudah dimuat sebelum aplikasi ditutup.
+    NgbaReleaseRom();
 
     session.Close();
     return error;
