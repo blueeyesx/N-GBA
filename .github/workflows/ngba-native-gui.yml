@@ -8,6 +8,8 @@ on:
       - "src/app.cc"
       - "src/window_server.cc"
       - "src/window_server.h"
+      - "src/rom_loader.cc"
+      - "src/rom_loader.h"
       - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
@@ -76,6 +78,8 @@ jobs:
             src/app.cc \
             src/window_server.cc \
             src/window_server.h \
+            src/rom_loader.cc \
+            src/rom_loader.h \
             symbian.toml
           do
             test -s "$file" || {
@@ -84,7 +88,7 @@ jobs:
             }
           done
 
-          echo "Source validation passed."
+          echo "All source files are present."
 
       - name: Initialize Symbian project
         shell: bash
@@ -120,10 +124,16 @@ jobs:
           cp src/window_server.h \
             "$PROJECT/src/window_server.h"
 
+          cp src/rom_loader.h \
+            "$PROJECT/src/rom_loader.h"
+
+          cp src/rom_loader.cc \
+            "$PROJECT/src/rom_loader.cc"
+
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
-          echo "N-GBA sources installed."
+          echo "N-GBA GUI and ROM Loader sources installed."
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -180,6 +190,7 @@ jobs:
           symbian_add_executable(
               ngba_native_gui
               src/window_server.cc
+              src/rom_loader.cc
           )
 
           target_link_libraries(
@@ -213,7 +224,7 @@ jobs:
           content = path.read_text()
 
           content, count = re.subn(
-              r'(?m)^(\s*architecture\s*=\s*)"[^\"]+"\s*$',
+              r'(?m)^(\s*architecture\s*=\s*)"[^"]+"\s*$',
               lambda m: m.group(1) + '"' + architecture + '"',
               content,
               count=1
@@ -237,6 +248,8 @@ jobs:
           test -s "$PROJECT/window_server.h"
           test -s "$PROJECT/src/window_server.cc"
           test -s "$PROJECT/src/window_server.h"
+          test -s "$PROJECT/src/rom_loader.h"
+          test -s "$PROJECT/src/rom_loader.cc"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
 
@@ -245,6 +258,15 @@ jobs:
 
           grep -q 'SaveLanguageMode' \
             "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaLoadRom' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaReleaseRom' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaLoadRom' \
+            "$PROJECT/src/rom_loader.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
@@ -317,8 +339,10 @@ jobs:
 
           if [ ! -s "$SIS" ]; then
             echo "ERROR: SIS not generated."
+
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
+
             exit 1
           fi
 
