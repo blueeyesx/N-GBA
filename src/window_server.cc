@@ -2,6 +2,7 @@
 #include "window_server.h"
 
 #include <e32base.h>
+#include <e32std.h>
 #include <e32keys.h>
 #include <w32std.h>
 
@@ -15,15 +16,30 @@ const TUint KBlue       = 0x00308CFF;
 const TUint KWhite      = 0x00FFFFFF;
 const TUint KMuted      = 0x0098A9C2;
 
-const char* const KMenu[KMenuCount] = {
+const char* const KMenuEnglish[KMenuCount] = {
     "GAME LIBRARY",
     "LOAD ROM",
     "RESUME GAME",
     "SAVE STATES",
     "SETTINGS",
     "ABOUT N-GBA",
-    "EXIT / KELUAR"
+    "EXIT"
 };
+
+const char* const KMenuIndonesian[KMenuCount] = {
+    "PUSTAKA GAME",
+    "MUAT ROM",
+    "LANJUTKAN",
+    "SAVE STATE",
+    "PENGATURAN",
+    "TENTANG N-GBA",
+    "KELUAR"
+};
+
+const TBool IsIndonesian()
+{
+    return User::Language() == ELangIndonesian;
+}
 
 void Fill(
     CWindowGc& gc,
@@ -69,9 +85,21 @@ void DrawMenu(
     CFont* font,
     const TSize& size,
     TInt selected,
-    const char* message
+    const char* message,
+    TBool indonesian
 ) {
-    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    const char* const* menu =
+        indonesian ? KMenuIndonesian : KMenuEnglish;
+
+    Fill(
+        gc,
+        0,
+        0,
+        size.iWidth,
+        size.iHeight,
+        KBackground
+    );
+
     Fill(gc, 0, 0, size.iWidth, 4, KBlue);
 
     gc.UseFont(font);
@@ -80,6 +108,7 @@ void DrawMenu(
     DrawText(gc, "STELLAR DRAGON", 12, 51, KBlue);
 
     const TInt top = 72;
+
     const TInt rowHeight =
         size.iHeight >= 300 ? 27 : 22;
 
@@ -96,7 +125,13 @@ void DrawMenu(
                 KBlue
             );
 
-            DrawText(gc, KMenu[i], 18, y + 15, KWhite);
+            DrawText(
+                gc,
+                menu[i],
+                18,
+                y + 15,
+                KWhite
+            );
         } else {
             Fill(
                 gc,
@@ -107,7 +142,13 @@ void DrawMenu(
                 KPanel
             );
 
-            DrawText(gc, KMenu[i], 18, y + 15, KMuted);
+            DrawText(
+                gc,
+                menu[i],
+                18,
+                y + 15,
+                KMuted
+            );
         }
     }
 
@@ -122,7 +163,8 @@ void DrawMenu(
     gc.DiscardFont();
 }
 
-TInt RunWindowServer() {
+TInt RunWindowServer()
+{
     RWsSession session;
 
     TInt error = session.Connect();
@@ -142,13 +184,17 @@ TInt RunWindowServer() {
             error = gc.Construct();
 
             if (error == KErrNone) {
-                const TSize size = screen.SizeInPixels();
+                const TSize size =
+                    screen.SizeInPixels();
 
                 CFont* font = NULL;
 
                 _LIT(KTypeface, "");
 
-                const TFontSpec fontSpec(KTypeface, 120);
+                const TFontSpec fontSpec(
+                    KTypeface,
+                    120
+                );
 
                 error =
                     screen.GetNearestFontToDesignHeightInTwips(
@@ -168,14 +214,24 @@ TInt RunWindowServer() {
 
                         if (error == KErrNone) {
                             TInt selected = 0;
+
                             TBool running = ETrue;
 
+                            const TBool indonesian =
+                                IsIndonesian();
+
                             const char* message =
-                                "UP DOWN SELECT BACK";
+                                indonesian
+                                ? "ATAS BAWAH PILIH KEMBALI"
+                                : "UP DOWN SELECT BACK";
 
                             group.SetOrdinalPosition(0);
 
-                            window.SetExtent(TPoint(0, 0), size);
+                            window.SetExtent(
+                                TPoint(0, 0),
+                                size
+                            );
+
                             window.SetVisible(ETrue);
                             window.Activate();
 
@@ -191,6 +247,7 @@ TInt RunWindowServer() {
                             while (running) {
                                 User::WaitForAnyRequest();
 
+                                // Keyboard events
                                 if (events != KRequestPending) {
                                     if (events.Int() != KErrNone) {
                                         error = events.Int();
@@ -198,6 +255,7 @@ TInt RunWindowServer() {
                                     }
 
                                     TWsEvent event;
+
                                     session.GetEvent(event);
 
                                     if (
@@ -231,32 +289,44 @@ TInt RunWindowServer() {
                                             switch (selected) {
                                                 case 0:
                                                     message =
-                                                        "GAME LIBRARY SELECTED";
+                                                        indonesian
+                                                        ? "PUSTAKA GAME DIPILIH"
+                                                        : "GAME LIBRARY SELECTED";
                                                     break;
 
                                                 case 1:
                                                     message =
-                                                        "LOAD ROM SELECTED";
+                                                        indonesian
+                                                        ? "MUAT ROM DIPILIH"
+                                                        : "LOAD ROM SELECTED";
                                                     break;
 
                                                 case 2:
                                                     message =
-                                                        "NO SAVED GAME YET";
+                                                        indonesian
+                                                        ? "BELUM ADA GAME"
+                                                        : "NO SAVED GAME YET";
                                                     break;
 
                                                 case 3:
                                                     message =
-                                                        "SAVE STATES SELECTED";
+                                                        indonesian
+                                                        ? "SAVE STATE DIPILIH"
+                                                        : "SAVE STATES SELECTED";
                                                     break;
 
                                                 case 4:
                                                     message =
-                                                        "SETTINGS SELECTED";
+                                                        indonesian
+                                                        ? "PENGATURAN DIPILIH"
+                                                        : "SETTINGS SELECTED";
                                                     break;
 
                                                 case 5:
                                                     message =
-                                                        "N-GBA GBA EMULATOR";
+                                                        indonesian
+                                                        ? "EMULATOR GBA N-GBA"
+                                                        : "N-GBA GBA EMULATOR";
                                                     break;
 
                                                 case 6:
@@ -279,6 +349,7 @@ TInt RunWindowServer() {
                                     }
                                 }
 
+                                // Redraw events
                                 if (redraws != KRequestPending) {
                                     if (redraws.Int() != KErrNone) {
                                         error = redraws.Int();
@@ -286,10 +357,13 @@ TInt RunWindowServer() {
                                     }
 
                                     TWsRedrawEvent redraw;
+
                                     session.GetRedraw(redraw);
 
                                     if (redraw.Handle() == 2) {
-                                        window.BeginRedraw(redraw.Rect());
+                                        window.BeginRedraw(
+                                            redraw.Rect()
+                                        );
 
                                         gc.Activate(window);
 
@@ -298,10 +372,12 @@ TInt RunWindowServer() {
                                             font,
                                             size,
                                             selected,
-                                            message
+                                            message,
+                                            indonesian
                                         );
 
                                         gc.Deactivate();
+
                                         window.EndRedraw();
                                     }
 
@@ -313,6 +389,7 @@ TInt RunWindowServer() {
                                 session.Flush();
                             }
 
+                            // Cancel pending requests
                             session.EventReadyCancel();
                             session.RedrawReadyCancel();
 
@@ -343,7 +420,8 @@ TInt RunWindowServer() {
 
 } // namespace
 
-int GuiWindowServerMain() {
+int GuiWindowServerMain()
+{
     CTrapCleanup* cleanup = CTrapCleanup::New();
 
     if (cleanup == NULL) {
