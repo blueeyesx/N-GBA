@@ -36,11 +36,11 @@ namespace
 }
 
 TInt NgbaCpuRunSelfTests(
-    const TUint8* restoreRom,
-    TInt restoreRomSize
+    const TDesC& aRestorePath,
+    TInt aRestoreRomSize
 )
 {
-    if (restoreRom == NULL || restoreRomSize <= 0)
+    if (aRestoreRomSize <= 0)
         return KErrArgument;
 
     TInt result = NgbaMemoryInit(
@@ -48,51 +48,50 @@ TInt NgbaCpuRunSelfTests(
         sizeof(KTestRom)
     );
 
-    if (result != KErrNone)
-        return result;
-
-    TNgbaCpuState cpu;
-    NgbaCpuReset(cpu);
-
-    // r3 menunjuk ke EWRAM untuk pengujian STR/LDR.
-    cpu.r[3] = KEwramTestAddress;
-
-    // Jalankan enam instruksi.
-    for (TInt i = 0; i < 6; ++i)
+    if (result == KErrNone)
     {
-        result = NgbaCpuStep(cpu);
+        TNgbaCpuState cpu;
+        NgbaCpuReset(cpu);
 
-        if (result != ENgbaCpuOk)
+        // r3 menunjuk ke EWRAM.
+        cpu.r[3] = KEwramTestAddress;
+
+        for (TInt i = 0; i < 6; ++i)
         {
-            result = KErrCorrupt;
-            break;
+            result = NgbaCpuStep(cpu);
+
+            if (result != ENgbaCpuOk)
+            {
+                result = KErrCorrupt;
+                break;
+            }
+        }
+
+        if (result == ENgbaCpuOk)
+        {
+            if (!CheckRegister(cpu, 0, 5))
+                result = KErrCorrupt;
+            else if (!CheckRegister(cpu, 1, 8))
+                result = KErrCorrupt;
+            else if (!CheckRegister(cpu, 2, 6))
+                result = KErrCorrupt;
+            else if (!CheckRegister(cpu, 4, 6))
+                result = KErrCorrupt;
+            else if (
+                NgbaMemoryRead32(KEwramTestAddress) != 6
+            )
+                result = KErrCorrupt;
+            else if (
+                (NgbaCpuGetCpsr(cpu) & 0x40000000u) == 0
+            )
+                result = KErrCorrupt;
         }
     }
 
-    if (result == ENgbaCpuOk)
-    {
-        if (!CheckRegister(cpu, 0, 5))
-            result = KErrCorrupt;
-        else if (!CheckRegister(cpu, 1, 8))
-            result = KErrCorrupt;
-        else if (!CheckRegister(cpu, 2, 6))
-            result = KErrCorrupt;
-        else if (!CheckRegister(cpu, 4, 6))
-            result = KErrCorrupt;
-        else if (
-            NgbaMemoryRead32(KEwramTestAddress) != 6
-        )
-            result = KErrCorrupt;
-        else if (
-            (NgbaCpuGetCpsr(cpu) & 0x40000000u) == 0
-        )
-            result = KErrCorrupt;
-    }
-
-    // Kembalikan Memory Bus ke ROM game sebenarnya.
-    const TInt restoreResult = NgbaMemoryInit(
-        restoreRom,
-        restoreRomSize
+    // Tutup mode test dan buka kembali ROM game.
+    const TInt restoreResult = NgbaMemoryInitFile(
+        aRestorePath,
+        aRestoreRomSize
     );
 
     if (restoreResult != KErrNone)
