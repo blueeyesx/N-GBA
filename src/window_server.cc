@@ -4,11 +4,33 @@
 #include <e32base.h>
 #include <e32std.h>
 #include <e32keys.h>
+#include <f32file.h>
 #include <w32std.h>
 
 namespace {
 
-const TInt KMenuCount = 7;
+// Menu utama
+const TInt KMainMenuCount = 7;
+
+// Menu pengaturan
+const TInt KSettingsMenuCount = 2;
+
+// Menu bahasa
+const TInt KLanguageMenuCount = 4;
+
+// Mode bahasa
+enum TLanguageMode {
+    ELanguageAuto = 0,
+    ELanguageIndonesian = 1,
+    ELanguageEnglish = 2
+};
+
+// Halaman aplikasi
+enum TMenuPage {
+    EMainPage = 0,
+    ESettingsPage,
+    ELanguagePage
+};
 
 const TUint KBackground = 0x00080D18;
 const TUint KPanel      = 0x00121D30;
@@ -16,30 +38,217 @@ const TUint KBlue       = 0x00308CFF;
 const TUint KWhite      = 0x00FFFFFF;
 const TUint KMuted      = 0x0098A9C2;
 
-const char* const KMenuEnglish[KMenuCount] = {
-    "GAME LIBRARY",
-    "LOAD ROM",
-    "RESUME GAME",
-    "SAVE STATES",
-    "SETTINGS",
-    "ABOUT N-GBA",
-    "EXIT"
-};
+const TInt KMenuTop = 72;
 
-const char* const KMenuIndonesian[KMenuCount] = {
-    "PUSTAKA GAME",
-    "MUAT ROM",
-    "LANJUTKAN",
-    "SAVE STATE",
-    "PENGATURAN",
-    "TENTANG N-GBA",
-    "KELUAR"
-};
+_LIT(KLanguageFolder, "C:\\Data\\N-GBA\\");
+_LIT(KLanguageFile, "C:\\Data\\N-GBA\\language.dat");
 
-const TBool IsIndonesian()
+// --------------------------------------------------
+// Penyimpanan bahasa
+// --------------------------------------------------
+
+TInt LoadLanguageMode()
 {
+    RFs fs;
+
+    if (fs.Connect() != KErrNone) {
+        return ELanguageAuto;
+    }
+
+    RFile file;
+
+    TInt error = file.Open(
+        fs,
+        KLanguageFile,
+        EFileRead | EFileShareReadersOnly
+    );
+
+    TInt mode = ELanguageAuto;
+
+    if (error == KErrNone) {
+        TBuf8<1> data;
+
+        error = file.Read(data);
+
+        if (error == KErrNone && data.Length() > 0) {
+            const TInt value = data[0];
+
+            if (
+                value >= ELanguageAuto &&
+                value <= ELanguageEnglish
+            ) {
+                mode = value;
+            }
+        }
+
+        file.Close();
+    }
+
+    fs.Close();
+
+    return mode;
+}
+
+TInt SaveLanguageMode(TInt mode)
+{
+    RFs fs;
+
+    TInt error = fs.Connect();
+
+    if (error != KErrNone) {
+        return error;
+    }
+
+    error = fs.MkDirAll(KLanguageFolder);
+
+    if (
+        error != KErrNone &&
+        error != KErrAlreadyExists
+    ) {
+        fs.Close();
+        return error;
+    }
+
+    RFile file;
+
+    error = file.Replace(
+        fs,
+        KLanguageFile,
+        EFileWrite | EFileShareExclusive
+    );
+
+    if (error == KErrNone) {
+        TBuf8<1> data;
+
+        data.Append(static_cast<TUint8>(mode));
+
+        error = file.Write(data);
+
+        file.Close();
+    }
+
+    fs.Close();
+
+    return error;
+}
+
+// --------------------------------------------------
+// Deteksi bahasa
+// --------------------------------------------------
+
+TBool IsIndonesian(TInt mode)
+{
+    if (mode == ELanguageIndonesian) {
+        return ETrue;
+    }
+
+    if (mode == ELanguageEnglish) {
+        return EFalse;
+    }
+
     return User::Language() == ELangIndonesian;
 }
+
+// --------------------------------------------------
+// Menu
+// --------------------------------------------------
+
+TInt MenuCount(TInt page)
+{
+    if (page == ESettingsPage) {
+        return KSettingsMenuCount;
+    }
+
+    if (page == ELanguagePage) {
+        return KLanguageMenuCount;
+    }
+
+    return KMainMenuCount;
+}
+
+const char* MenuText(
+    TInt page,
+    TInt index,
+    TBool indonesian
+)
+{
+    if (page == EMainPage) {
+
+        if (indonesian) {
+            static const char* menu[] = {
+                "PUSTAKA GAME",
+                "MUAT ROM",
+                "LANJUTKAN",
+                "SAVE STATE",
+                "PENGATURAN",
+                "TENTANG N-GBA",
+                "KELUAR"
+            };
+
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "GAME LIBRARY",
+            "LOAD ROM",
+            "RESUME GAME",
+            "SAVE STATES",
+            "SETTINGS",
+            "ABOUT N-GBA",
+            "EXIT"
+        };
+
+        return menu[index];
+    }
+
+    if (page == ESettingsPage) {
+
+        if (indonesian) {
+            static const char* menu[] = {
+                "BAHASA",
+                "KEMBALI"
+            };
+
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "LANGUAGE",
+            "BACK"
+        };
+
+        return menu[index];
+    }
+
+    if (page == ELanguagePage) {
+
+        if (indonesian) {
+            static const char* menu[] = {
+                "OTOMATIS (SISTEM HP)",
+                "BAHASA INDONESIA",
+                "ENGLISH",
+                "KEMBALI"
+            };
+
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "AUTO (SYSTEM)",
+            "BAHASA INDONESIA",
+            "ENGLISH",
+            "BACK"
+        };
+
+        return menu[index];
+    }
+
+    return "";
+}
+
+// --------------------------------------------------
+// Grafik
+// --------------------------------------------------
 
 void Fill(
     CWindowGc& gc,
@@ -48,12 +257,15 @@ void Fill(
     TInt width,
     TInt height,
     TUint color
-) {
+)
+{
     gc.SetPenStyle(CGraphicsContext::ENullPen);
     gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
     gc.SetBrushColor(TRgb(color));
 
-    gc.DrawRect(TRect(x, y, x + width, y + height));
+    gc.DrawRect(
+        TRect(x, y, x + width, y + height)
+    );
 }
 
 void DrawText(
@@ -62,12 +274,18 @@ void DrawText(
     TInt x,
     TInt y,
     TUint color
-) {
+)
+{
     TUint16 buffer[96];
     TInt length = 0;
 
-    while (text[length] != '\0' && length < 96) {
-        buffer[length] = static_cast<TUint8>(text[length]);
+    while (
+        text[length] != '\0' &&
+        length < 96
+    ) {
+        buffer[length] =
+            static_cast<TUint8>(text[length]);
+
         ++length;
     }
 
@@ -84,13 +302,13 @@ void DrawMenu(
     CWindowGc& gc,
     CFont* font,
     const TSize& size,
+    TInt page,
     TInt selected,
+    TInt languageMode,
     const char* message,
     TBool indonesian
-) {
-    const char* const* menu =
-        indonesian ? KMenuIndonesian : KMenuEnglish;
-
+)
+{
     Fill(
         gc,
         0,
@@ -100,54 +318,73 @@ void DrawMenu(
         KBackground
     );
 
-    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
+    Fill(
+        gc,
+        0,
+        0,
+        size.iWidth,
+        4,
+        KBlue
+    );
 
     gc.UseFont(font);
 
-    DrawText(gc, "N-GBA", 12, 30, KWhite);
-    DrawText(gc, "STELLAR DRAGON", 12, 51, KBlue);
+    DrawText(
+        gc,
+        "N-GBA",
+        12,
+        30,
+        KWhite
+    );
 
-    const TInt top = 72;
+    DrawText(
+        gc,
+        "STELLAR DRAGON",
+        12,
+        51,
+        KBlue
+    );
+
+    const TInt count = MenuCount(page);
 
     const TInt rowHeight =
         size.iHeight >= 300 ? 27 : 22;
 
-    for (TInt i = 0; i < KMenuCount; ++i) {
-        const TInt y = top + i * rowHeight;
+    for (TInt i = 0; i < count; ++i) {
 
-        if (i == selected) {
-            Fill(
-                gc,
-                8,
-                y,
-                size.iWidth - 16,
-                rowHeight - 2,
-                KBlue
-            );
+        const TInt y = KMenuTop + i * rowHeight;
 
+        const TUint color =
+            (i == selected) ? KBlue : KPanel;
+
+        Fill(
+            gc,
+            8,
+            y,
+            size.iWidth - 16,
+            rowHeight - 2,
+            color
+        );
+
+        DrawText(
+            gc,
+            MenuText(page, i, indonesian),
+            15,
+            y + 15,
+            (i == selected) ? KWhite : KMuted
+        );
+
+        // Tanda mode bahasa aktif
+        if (
+            page == ELanguagePage &&
+            i == languageMode
+        ) {
             DrawText(
                 gc,
-                menu[i],
-                18,
+                "*",
+                size.iWidth - 18,
                 y + 15,
                 KWhite
-            );
-        } else {
-            Fill(
-                gc,
-                8,
-                y,
-                size.iWidth - 16,
-                rowHeight - 2,
-                KPanel
-            );
-
-            DrawText(
-                gc,
-                menu[i],
-                18,
-                y + 15,
-                KMuted
             );
         }
     }
@@ -162,6 +399,10 @@ void DrawMenu(
 
     gc.DiscardFont();
 }
+
+// --------------------------------------------------
+// Window Server
+// --------------------------------------------------
 
 TInt RunWindowServer()
 {
@@ -179,11 +420,13 @@ TInt RunWindowServer()
         error = screen.Construct();
 
         if (error == KErrNone) {
+
             CWindowGc gc(&screen);
 
             error = gc.Construct();
 
             if (error == KErrNone) {
+
                 const TSize size =
                     screen.SizeInPixels();
 
@@ -203,22 +446,29 @@ TInt RunWindowServer()
                     );
 
                 if (error == KErrNone) {
+
                     RWindowGroup group(session);
 
                     error = group.Construct(1, ETrue);
 
                     if (error == KErrNone) {
+
                         RWindow window(session);
 
                         error = window.Construct(group, 2);
 
                         if (error == KErrNone) {
+
+                            TInt languageMode =
+                                LoadLanguageMode();
+
+                            TBool indonesian =
+                                IsIndonesian(languageMode);
+
+                            TInt page = EMainPage;
                             TInt selected = 0;
 
                             TBool running = ETrue;
-
-                            const TBool indonesian =
-                                IsIndonesian();
 
                             const char* message =
                                 indonesian
@@ -245,10 +495,15 @@ TInt RunWindowServer()
                             session.Flush();
 
                             while (running) {
+
                                 User::WaitForAnyRequest();
 
-                                // Keyboard events
+                                // --------------------------
+                                // Keyboard
+                                // --------------------------
+
                                 if (events != KRequestPending) {
+
                                     if (events.Int() != KErrNone) {
                                         error = events.Int();
                                         break;
@@ -262,23 +517,26 @@ TInt RunWindowServer()
                                         event.Type() == EEventKey ||
                                         event.Type() == EEventKeyDown
                                     ) {
+
                                         const TUint key =
                                             event.Key()->iCode;
 
                                         if (key == EKeyUpArrow) {
+
                                             selected =
                                                 (selected +
-                                                KMenuCount - 1) %
-                                                KMenuCount;
+                                                MenuCount(page) - 1) %
+                                                MenuCount(page);
 
                                             window.Invalidate();
 
                                         } else if (
                                             key == EKeyDownArrow
                                         ) {
+
                                             selected =
                                                 (selected + 1) %
-                                                KMenuCount;
+                                                MenuCount(page);
 
                                             window.Invalidate();
 
@@ -286,52 +544,131 @@ TInt RunWindowServer()
                                             key == EKeyEnter ||
                                             key == EKeyDevice3
                                         ) {
-                                            switch (selected) {
-                                                case 0:
+
+                                            if (page == EMainPage) {
+
+                                                switch (selected) {
+
+                                                    case 0:
+                                                        message =
+                                                            indonesian
+                                                            ? "PUSTAKA GAME DIPILIH"
+                                                            : "GAME LIBRARY SELECTED";
+                                                        break;
+
+                                                    case 1:
+                                                        message =
+                                                            indonesian
+                                                            ? "MUAT ROM DIPILIH"
+                                                            : "LOAD ROM SELECTED";
+                                                        break;
+
+                                                    case 2:
+                                                        message =
+                                                            indonesian
+                                                            ? "BELUM ADA GAME"
+                                                            : "NO SAVED GAME YET";
+                                                        break;
+
+                                                    case 3:
+                                                        message =
+                                                            indonesian
+                                                            ? "SAVE STATE DIPILIH"
+                                                            : "SAVE STATES SELECTED";
+                                                        break;
+
+                                                    case 4:
+                                                        page = ESettingsPage;
+                                                        selected = 0;
+
+                                                        message =
+                                                            indonesian
+                                                            ? "PENGATURAN"
+                                                            : "SETTINGS";
+                                                        break;
+
+                                                    case 5:
+                                                        message =
+                                                            indonesian
+                                                            ? "EMULATOR GBA N-GBA"
+                                                            : "N-GBA GBA EMULATOR";
+                                                        break;
+
+                                                    case 6:
+                                                        running = EFalse;
+                                                        break;
+                                                }
+
+                                            } else if (
+                                                page == ESettingsPage
+                                            ) {
+
+                                                if (selected == 0) {
+
+                                                    page = ELanguagePage;
+                                                    selected = 0;
+
                                                     message =
                                                         indonesian
-                                                        ? "PUSTAKA GAME DIPILIH"
-                                                        : "GAME LIBRARY SELECTED";
-                                                    break;
+                                                        ? "PILIH BAHASA"
+                                                        : "SELECT LANGUAGE";
 
-                                                case 1:
+                                                } else {
+
+                                                    page = EMainPage;
+                                                    selected = 4;
+
                                                     message =
                                                         indonesian
-                                                        ? "MUAT ROM DIPILIH"
-                                                        : "LOAD ROM SELECTED";
-                                                    break;
+                                                        ? "PENGATURAN"
+                                                        : "SETTINGS";
+                                                }
 
-                                                case 2:
+                                            } else if (
+                                                page == ELanguagePage
+                                            ) {
+
+                                                if (selected <= 2) {
+
+                                                    languageMode = selected;
+
+                                                    const TInt saveError =
+                                                        SaveLanguageMode(
+                                                            languageMode
+                                                        );
+
+                                                    indonesian =
+                                                        IsIndonesian(
+                                                            languageMode
+                                                        );
+
+                                                    page = ESettingsPage;
+                                                    selected = 0;
+
+                                                    if (
+                                                        saveError == KErrNone
+                                                    ) {
+                                                        message =
+                                                            indonesian
+                                                            ? "BAHASA TERSIMPAN"
+                                                            : "LANGUAGE SAVED";
+                                                    } else {
+                                                        message =
+                                                            indonesian
+                                                            ? "GAGAL SIMPAN BAHASA"
+                                                            : "LANGUAGE SAVE FAILED";
+                                                    }
+
+                                                } else {
+
+                                                    page = ESettingsPage;
+                                                    selected = 0;
+
                                                     message =
                                                         indonesian
-                                                        ? "BELUM ADA GAME"
-                                                        : "NO SAVED GAME YET";
-                                                    break;
-
-                                                case 3:
-                                                    message =
-                                                        indonesian
-                                                        ? "SAVE STATE DIPILIH"
-                                                        : "SAVE STATES SELECTED";
-                                                    break;
-
-                                                case 4:
-                                                    message =
-                                                        indonesian
-                                                        ? "PENGATURAN DIPILIH"
-                                                        : "SETTINGS SELECTED";
-                                                    break;
-
-                                                case 5:
-                                                    message =
-                                                        indonesian
-                                                        ? "EMULATOR GBA N-GBA"
-                                                        : "N-GBA GBA EMULATOR";
-                                                    break;
-
-                                                case 6:
-                                                    running = EFalse;
-                                                    break;
+                                                        ? "PENGATURAN"
+                                                        : "SETTINGS";
+                                                }
                                             }
 
                                             window.Invalidate();
@@ -340,7 +677,25 @@ TInt RunWindowServer()
                                             key == EKeyBackspace ||
                                             key == EKeyEscape
                                         ) {
-                                            running = EFalse;
+
+                                            if (page == EMainPage) {
+
+                                                running = EFalse;
+
+                                            } else if (
+                                                page == ELanguagePage
+                                            ) {
+
+                                                page = ESettingsPage;
+                                                selected = 0;
+
+                                            } else {
+
+                                                page = EMainPage;
+                                                selected = 4;
+                                            }
+
+                                            window.Invalidate();
                                         }
                                     }
 
@@ -349,8 +704,12 @@ TInt RunWindowServer()
                                     }
                                 }
 
-                                // Redraw events
+                                // --------------------------
+                                // Redraw
+                                // --------------------------
+
                                 if (redraws != KRequestPending) {
+
                                     if (redraws.Int() != KErrNone) {
                                         error = redraws.Int();
                                         break;
@@ -361,6 +720,7 @@ TInt RunWindowServer()
                                     session.GetRedraw(redraw);
 
                                     if (redraw.Handle() == 2) {
+
                                         window.BeginRedraw(
                                             redraw.Rect()
                                         );
@@ -371,7 +731,9 @@ TInt RunWindowServer()
                                             gc,
                                             font,
                                             size,
+                                            page,
                                             selected,
+                                            languageMode,
                                             message,
                                             indonesian
                                         );
@@ -389,7 +751,10 @@ TInt RunWindowServer()
                                 session.Flush();
                             }
 
-                            // Cancel pending requests
+                            // --------------------------
+                            // Cleanup
+                            // --------------------------
+
                             session.EventReadyCancel();
                             session.RedrawReadyCancel();
 
@@ -419,6 +784,10 @@ TInt RunWindowServer()
 }
 
 } // namespace
+
+// --------------------------------------------------
+// Application entry
+// --------------------------------------------------
 
 int GuiWindowServerMain()
 {
