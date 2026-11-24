@@ -1,0 +1,109 @@
+
+name: N-GBA - Symbian Platform SDK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/ngba-symbian-platform.yml"
+      - "diagnostic/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: S60v3-ARMv5T
+            architecture: armv5t
+            app: ngba_diag_s60v3
+          - target: Anna-ARMv6
+            architecture: armv6
+            app: ngba_diag_anna
+
+    steps:
+      - name: Checkout N-GBA
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Symbian Platform tools
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install symbian-platform==0.3.0
+          symbian --help
+          symbian doctor
+
+      - name: Download native SDK 0.3.0
+        shell: bash
+        run: |
+          curl -fL \
+            "https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz" \
+            -o symbian-sdk.tar.gz
+
+          test -s symbian-sdk.tar.gz
+
+      - name: Install native SDK
+        shell: bash
+        run: |
+          symbian sdk install \
+            "$HOME/dev/symbian-sdk" \
+            --archive symbian-sdk.tar.gz
+
+      - name: Check ARM toolchain
+        shell: bash
+        run: |
+          symbian toolchain probe
+
+      - name: Create diagnostic project
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/${{ matrix.app }}"
+
+          symbian init \
+            "$RUNNER_TEMP/${{ matrix.app }}" \
+            --name "${{ matrix.app }}" \
+            --architecture "${{ matrix.architecture }}" \
+            --non-interactive
+
+      - name: Build diagnostic application
+        shell: bash
+        run: |
+          symbian app build \
+            --project "$RUNNER_TEMP/${{ matrix.app }}"
+
+      - name: Inspect E32 executable
+        shell: bash
+        run: |
+          symbian inspect --format e32 \
+            "$RUNNER_TEMP/${{ matrix.app }}/.symbian/build/${{ matrix.app }}.exe"
+
+      - name: Create SIS package
+        shell: bash
+        run: |
+          symbian package \
+            --project "$RUNNER_TEMP/${{ matrix.app }}" \
+            --artifact "$RUNNER_TEMP/${{ matrix.app }}/.symbian/build/${{ matrix.app }}.exe" \
+            --output "$RUNNER_TEMP/${{ matrix.app }}/.symbian/package"
+
+          symbian inspect --format sis \
+            "$RUNNER_TEMP/${{ matrix.app }}/.symbian/package/${{ matrix.app }}.sis"
+
+      - name: Upload SIS and E32
+        uses: actions/upload-artifact@v4
+        with:
+          name: N-GBA-Diagnostic-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.app }}/.symbian/build/*.exe
+            ${{ runner.temp }}/${{ matrix.app }}/.symbian/package/*.sis
+          if-no-files-found: error
