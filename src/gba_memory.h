@@ -4,46 +4,30 @@
 
 #include <e32std.h>
 
-// --------------------------------------------------
-// INISIALISASI MEMORY
-// --------------------------------------------------
-
-// Inisialisasi menggunakan data ROM di RAM.
+// Inisialisasi ROM dari RAM.
 TInt NgbaMemoryInit(
     const TUint8* aRom,
     TInt aRomSize
 );
 
-// Inisialisasi menggunakan file ROM.
-// ROM dibaca melalui cache agar penggunaan RAM lebih hemat.
+// Inisialisasi ROM langsung dari file.
 TInt NgbaMemoryInitFile(
     const TDesC& aPath,
     TInt aRomSize
 );
 
-// Melepaskan seluruh resource memory dan file ROM.
+// Mematikan Memory Bus.
 void NgbaMemoryShutdown();
 
-// --------------------------------------------------
-// MEMORY READ
-// --------------------------------------------------
+// Menyimpan save game ke penyimpanan.
+TInt NgbaMemorySaveFlush();
 
-TUint8 NgbaMemoryRead8(
-    TUint32 aAddress
-);
+// Membaca memori.
+TUint8 NgbaMemoryRead8(TUint32 aAddress);
+TUint16 NgbaMemoryRead16(TUint32 aAddress);
+TUint32 NgbaMemoryRead32(TUint32 aAddress);
 
-TUint16 NgbaMemoryRead16(
-    TUint32 aAddress
-);
-
-TUint32 NgbaMemoryRead32(
-    TUint32 aAddress
-);
-
-// --------------------------------------------------
-// MEMORY WRITE
-// --------------------------------------------------
-
+// Menulis memori.
 void NgbaMemoryWrite8(
     TUint32 aAddress,
     TUint8 aValue
@@ -59,32 +43,10 @@ void NgbaMemoryWrite32(
     TUint32 aValue
 );
 
-// --------------------------------------------------
-// BIOS HLE
-// --------------------------------------------------
+// BIOS HLE: SWI 01h.
+void NgbaMemoryRegisterRamReset(TUint32 aFlags);
 
-// Software Interrupt 01h:
-// RegisterRamReset.
-//
-// aFlags:
-// Bit 0 = EWRAM
-// Bit 1 = IWRAM
-// Bit 2 = Palette RAM
-// Bit 3 = VRAM
-// Bit 4 = OAM
-// Bit 5 = Serial registers
-// Bit 6 = Sound registers
-// Bit 7 = Other registers
-// Bit 8 = Cartridge RAM
-void NgbaMemoryRegisterRamReset(
-    TUint32 aFlags
-);
-
-// --------------------------------------------------
-// STATUS MEMORY
-// --------------------------------------------------
-
-// Memeriksa apakah memory bus sudah diinisialisasi.
+// Status Memory Bus.
 TBool NgbaMemoryReady();
 
-#endif // NGBA_GBA_MEMORY_H
+#endif
