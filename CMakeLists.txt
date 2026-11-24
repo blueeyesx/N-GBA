@@ -9,6 +9,7 @@ symbian_add_executable(
     ngba_native_gui
     src/window_server.cc
     src/rom_loader.cc
+    src/ngba_paths.cc
 )
 
 target_link_libraries(
