@@ -5,11 +5,9 @@
 
 #include <e32std.h>
 #include <f32file.h>
-#include <new>
 
 namespace
 {
-    TUint8* gRomData = NULL;
     TInt gRomSize = 0;
     TBuf8<4> gGameCode;
 
@@ -43,9 +41,6 @@ void NgbaReleaseRom()
 {
     NgbaMemoryShutdown();
 
-    delete[] gRomData;
-
-    gRomData = NULL;
     gRomSize = 0;
     gGameCode.Zero();
 }
@@ -101,70 +96,49 @@ TInt NgbaLoadRom(
         return KErrTooBig;
     }
 
-    // Alokasi tanpa leave untuk konfigurasi Stackless.
-    TUint8* buffer = new (std::nothrow) TUint8[fileSize];
+    // Hanya baca header 192 byte.
+    TUint8 header[KMinimumRomSize];
 
-    if (buffer == NULL)
-    {
-        file.Close();
-        fs.Close();
-        return KErrNoMemory;
-    }
-
-    TPtr8 descriptor(buffer, 0, fileSize);
+    TPtr8 headerDescriptor(
+        header,
+        0,
+        KMinimumRomSize
+    );
 
     error = file.Read(
         0,
-        descriptor,
-        fileSize
+        headerDescriptor,
+        KMinimumRomSize
     );
 
     file.Close();
     fs.Close();
 
     if (error != KErrNone)
-    {
-        delete[] buffer;
         return error;
-    }
 
-    if (descriptor.Length() != fileSize)
-    {
-        delete[] buffer;
+    if (headerDescriptor.Length() != KMinimumRomSize)
         return KErrEof;
-    }
 
-    if (buffer[0xB2] != 0x96)
-    {
-        delete[] buffer;
+    if (header[0xB2] != 0x96)
         return KErrCorrupt;
-    }
 
-    if (!IsValidGameCode(buffer + 0xAC))
-    {
-        delete[] buffer;
+    if (!IsValidGameCode(header + 0xAC))
         return KErrCorrupt;
-    }
 
-    gRomData = buffer;
-    gRomSize = fileSize;
-
-    gGameCode.Copy(buffer + 0xAC, 4);
-
-    error = NgbaMemoryInit(
-        gRomData,
-        gRomSize
+    // Buka ROM dari file menggunakan cache 4 KB.
+    error = NgbaMemoryInitFile(
+        aPath,
+        fileSize
     );
 
     if (error != KErrNone)
-    {
-        NgbaReleaseRom();
         return error;
-    }
 
+    // Uji CPU, lalu kembalikan Memory Bus ke file game.
     error = NgbaCpuRunSelfTests(
-        gRomData,
-        gRomSize
+        aPath,
+        fileSize
     );
 
     if (error != KErrNone)
@@ -172,6 +146,9 @@ TInt NgbaLoadRom(
         NgbaReleaseRom();
         return error;
     }
+
+    gRomSize = fileSize;
+    gGameCode.Copy(header + 0xAC, 4);
 
     aRomSize = static_cast<TUint32>(gRomSize);
     aGameCode.Copy(gGameCode);
@@ -181,7 +158,8 @@ TInt NgbaLoadRom(
 
 const TUint8* NgbaRomData()
 {
-    return gRomData;
+    // Tidak ada salinan ROM penuh di RAM.
+    return NULL;
 }
 
 TInt NgbaRomSize()
