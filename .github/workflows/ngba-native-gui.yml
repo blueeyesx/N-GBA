@@ -8,18 +8,15 @@ on:
       - "src/app.cc"
       - "src/window_server.cc"
       - "src/window_server.h"
-      - "src/rom_loader.cpp"
+      - "src/rom_loader.cc"
       - "src/rom_loader.h"
       - "src/arm7tdmi.cc"
       - "src/arm7tdmi.h"
       - "src/gba_memory.cc"
       - "src/gba_memory.h"
-      - "src/game_config.cpp"
-      - "src/game_config.h"
-      - "src/ngba_paths.cc"
-      - "src/ngba_paths.h"
       - "src/cpu_selftest.cc"
       - "src/cpu_selftest.h"
+      - "src/main.cpp"
       - "CMakeLists.txt"
       - "symbian.toml"
       - ".github/workflows/ngba-native-gui.yml"
@@ -38,6 +35,7 @@ jobs:
         include:
           - target: Nokia-E6-Symbian-Anna-ARMv6
             architecture: armv6
+            legacy: false
 
     steps:
       - name: Checkout repository
@@ -60,21 +58,17 @@ jobs:
         shell: bash
         run: |
           set -e
-
           curl -fL --retry 3 \
             "https://github.com/hpnkv/symbian-platform/releases/download/v0.3.0/symbian-sdk-0.3.0-linux-x86_64.tar.gz" \
             -o "$RUNNER_TEMP/symbian-sdk.tar.gz"
-
           test -s "$RUNNER_TEMP/symbian-sdk.tar.gz"
 
       - name: Install Symbian SDK
         shell: bash
         run: |
           set -e
-
           symbian sdk install "$HOME/dev/symbian-sdk" \
             --archive "$RUNNER_TEMP/symbian-sdk.tar.gz"
-
           symbian toolchain probe
 
       - name: Validate source files
@@ -86,16 +80,12 @@ jobs:
             src/app.cc \
             src/window_server.cc \
             src/window_server.h \
-            src/rom_loader.cpp \
+            src/rom_loader.cc \
             src/rom_loader.h \
             src/arm7tdmi.cc \
             src/arm7tdmi.h \
             src/gba_memory.cc \
             src/gba_memory.h \
-            src/game_config.cpp \
-            src/game_config.h \
-            src/ngba_paths.cc \
-            src/ngba_paths.h \
             src/cpu_selftest.cc \
             src/cpu_selftest.h \
             symbian.toml
@@ -106,7 +96,7 @@ jobs:
             }
           done
 
-          echo "All N-GBA source files are present."
+          echo "All source files are present."
 
       - name: Initialize Symbian project
         shell: bash
@@ -121,7 +111,6 @@ jobs:
             --non-interactive
 
           test -d "$PROJECT"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Install N-GBA sources
@@ -131,39 +120,41 @@ jobs:
 
           mkdir -p "$PROJECT/src"
 
-          # Application entry point
           cp src/app.cc "$PROJECT/app.cc"
 
-          # Window server
-          cp src/window_server.cc "$PROJECT/src/window_server.cc"
-          cp src/window_server.h "$PROJECT/src/window_server.h"
-          cp src/window_server.h "$PROJECT/window_server.h"
+          cp src/window_server.cc \
+            "$PROJECT/src/window_server.cc"
 
-          # ROM loader
-          cp src/rom_loader.cpp "$PROJECT/src/rom_loader.cpp"
-          cp src/rom_loader.h "$PROJECT/src/rom_loader.h"
+          cp src/window_server.h \
+            "$PROJECT/window_server.h"
 
-          # ARM7TDMI CPU
-          cp src/arm7tdmi.cc "$PROJECT/src/arm7tdmi.cc"
-          cp src/arm7tdmi.h "$PROJECT/src/arm7tdmi.h"
+          cp src/window_server.h \
+            "$PROJECT/src/window_server.h"
 
-          # GBA memory
-          cp src/gba_memory.cc "$PROJECT/src/gba_memory.cc"
-          cp src/gba_memory.h "$PROJECT/src/gba_memory.h"
+          cp src/rom_loader.h \
+            "$PROJECT/src/rom_loader.h"
 
-          # Game compatibility configuration
-          cp src/game_config.cpp "$PROJECT/src/game_config.cpp"
-          cp src/game_config.h "$PROJECT/src/game_config.h"
+          cp src/rom_loader.cc \
+            "$PROJECT/src/rom_loader.cc"
 
-          # Centralized file paths
-          cp src/ngba_paths.cc "$PROJECT/src/ngba_paths.cc"
-          cp src/ngba_paths.h "$PROJECT/src/ngba_paths.h"
+          cp src/arm7tdmi.h \
+            "$PROJECT/src/arm7tdmi.h"
 
-          # CPU self-test
-          cp src/cpu_selftest.cc "$PROJECT/src/cpu_selftest.cc"
-          cp src/cpu_selftest.h "$PROJECT/src/cpu_selftest.h"
+          cp src/arm7tdmi.cc \
+            "$PROJECT/src/arm7tdmi.cc"
 
-          # Remove unused template entry points
+          cp src/gba_memory.h \
+            "$PROJECT/src/gba_memory.h"
+
+          cp src/gba_memory.cc \
+            "$PROJECT/src/gba_memory.cc"
+
+          cp src/cpu_selftest.h \
+            "$PROJECT/src/cpu_selftest.h"
+
+          cp src/cpu_selftest.cc \
+            "$PROJECT/src/cpu_selftest.cc"
+
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
@@ -222,20 +213,11 @@ jobs:
 
           symbian_add_executable(
               ngba_native_gui
-
               src/window_server.cc
-              src/rom_loader.cpp
+              src/rom_loader.cc
               src/arm7tdmi.cc
               src/gba_memory.cc
-              src/game_config.cpp
-              src/ngba_paths.cc
               src/cpu_selftest.cc
-          )
-
-          target_include_directories(
-              ngba_native_gui
-              PRIVATE
-              ${CMAKE_CURRENT_SOURCE_DIR}/src
           )
 
           target_link_libraries(
@@ -281,70 +263,35 @@ jobs:
               )
 
           path.write_text(content)
-
-          print("Symbian metadata configured:")
           print(path.read_text())
           PY
 
-      - name: Verify installed sources
+      - name: Verify sources
         shell: bash
         run: |
           set -e
 
-          for file in \
-            "$PROJECT/app.cc" \
-            "$PROJECT/src/window_server.cc" \
-            "$PROJECT/src/window_server.h" \
-            "$PROJECT/src/rom_loader.cpp" \
-            "$PROJECT/src/rom_loader.h" \
-            "$PROJECT/src/arm7tdmi.cc" \
-            "$PROJECT/src/arm7tdmi.h" \
-            "$PROJECT/src/gba_memory.cc" \
-            "$PROJECT/src/gba_memory.h" \
-            "$PROJECT/src/game_config.cpp" \
-            "$PROJECT/src/game_config.h" \
-            "$PROJECT/src/ngba_paths.cc" \
-            "$PROJECT/src/ngba_paths.h" \
-            "$PROJECT/src/cpu_selftest.cc" \
-            "$PROJECT/src/cpu_selftest.h"
-          do
-            test -s "$file" || {
-              echo "ERROR: Missing installed source: $file"
-              exit 1
-            }
-          done
+          test -s "$PROJECT/app.cc"
+          test -s "$PROJECT/src/window_server.cc"
+          test -s "$PROJECT/src/window_server.h"
+          test -s "$PROJECT/src/rom_loader.h"
+          test -s "$PROJECT/src/rom_loader.cc"
+          test -s "$PROJECT/src/arm7tdmi.h"
+          test -s "$PROJECT/src/arm7tdmi.cc"
+          test -s "$PROJECT/src/gba_memory.h"
+          test -s "$PROJECT/src/gba_memory.cc"
+          test -s "$PROJECT/src/cpu_selftest.h"
+          test -s "$PROJECT/src/cpu_selftest.cc"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
-
-          grep -q 'NgbaLoadRom' \
-            "$PROJECT/src/rom_loader.cpp"
-
-          grep -q 'NgbaCpuReset' \
-            "$PROJECT/src/arm7tdmi.cc"
-
-          grep -q 'NgbaCpuStep' \
-            "$PROJECT/src/arm7tdmi.cc"
-
-          grep -q 'NgbaMemoryInit' \
-            "$PROJECT/src/gba_memory.cc"
-
-          grep -q 'NgbaMemoryRead32' \
-            "$PROJECT/src/gba_memory.cc"
-
-          grep -q 'NgbaMemoryWrite32' \
-            "$PROJECT/src/gba_memory.cc"
-
-          grep -q 'NgbaGameConfigCurrent' \
-            "$PROJECT/src/game_config.cpp"
-
-          grep -q 'NgbaPathsInit' \
-            "$PROJECT/src/ngba_paths.cc"
-
-          grep -q 'NgbaCpuRunSelfTests' \
-            "$PROJECT/src/cpu_selftest.cc"
-
-          grep -q 'NgbaCpuRunSelfTests' \
-            "$PROJECT/src/rom_loader.cpp"
+          grep -q 'NgbaLoadRom' "$PROJECT/src/rom_loader.cc"
+          grep -q 'NgbaCpuReset' "$PROJECT/src/arm7tdmi.cc"
+          grep -q 'NgbaCpuStep' "$PROJECT/src/arm7tdmi.cc"
+          grep -q 'NgbaMemoryInit' "$PROJECT/src/gba_memory.cc"
+          grep -q 'NgbaMemoryRead32' "$PROJECT/src/gba_memory.cc"
+          grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
+          grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/cpu_selftest.cc"
+          grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
@@ -359,7 +306,7 @@ jobs:
             "$PROJECT/src/window_server.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
-            echo "ERROR: Duplicate app.cc detected."
+            echo "ERROR: Duplicate app.cc."
             exit 1
           fi
 
@@ -375,7 +322,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           rm -rf "$PROJECT/.symbian/build"
           rm -rf "$PROJECT/.symbian/package"
 
@@ -390,10 +336,8 @@ jobs:
 
           if [ ! -s "$EXE" ]; then
             echo "ERROR: Executable not generated."
-
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
-
             exit 1
           fi
 
@@ -429,14 +373,11 @@ jobs:
 
           if [ ! -s "$SIS" ]; then
             echo "ERROR: SIS not generated."
-
             find "$PROJECT/.symbian" \
               -maxdepth 7 -type f || true
-
             exit 1
           fi
 
-          echo "SIS package generated:"
           ls -lh "$SIS"
 
       - name: Inspect SIS
