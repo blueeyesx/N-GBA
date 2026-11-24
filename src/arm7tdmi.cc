@@ -8,8 +8,20 @@ namespace
     const TUint32 KFlagZ = 0x40000000u;
     const TUint32 KFlagC = 0x20000000u;
     const TUint32 KFlagV = 0x10000000u;
+    const TUint32 KFlagT = 0x00000020u;
 
     const TUint32 KRomBase = 0x08000000u;
+
+    // Menjaga status ARM/Thumb dan bit T CPSR tetap sinkron.
+    void SetThumbState(TNgbaCpuState& cpu, TBool thumb)
+    {
+        cpu.thumb = thumb;
+
+        if (thumb)
+            cpu.cpsr |= KFlagT;
+        else
+            cpu.cpsr &= ~KFlagT;
+    }
 
     TBool ConditionPassed(TUint32 cpsr, TUint32 condition)
     {
@@ -81,7 +93,6 @@ namespace
                (value << (32 - amount));
     }
 
-    // ARM7TDMI word load.
     TUint32 ReadWordRotated(TUint32 address)
     {
         const TUint32 alignedAddress = address & ~3u;
@@ -488,7 +499,10 @@ namespace
                 );
 
             if (rd == 15)
+            {
+                SetThumbState(cpu, EFalse);
                 cpu.r[15] = value & ~3u;
+            }
             else
                 cpu.r[rd] = value;
         }
@@ -559,7 +573,10 @@ namespace
                     NgbaMemoryRead32(memoryAddress);
 
                 if (i == 15)
+                {
+                    SetThumbState(cpu, EFalse);
                     cpu.r[15] = value & ~3u;
+                }
                 else
                     cpu.r[i] = value;
             }
@@ -591,20 +608,24 @@ namespace
         if (!ConditionPassed(cpu.cpsr, condition))
             return ENgbaCpuOk;
 
-        // BX.
+        // BX: perpindahan ARM / Thumb.
         if ((instruction & 0x0FFFFFF0u) == 0x012FFF10u)
         {
             const TUint32 target =
                 ReadRegister(cpu, instruction & 15, address);
 
-            cpu.thumb = (target & 1u) != 0;
-            cpu.r[15] = cpu.thumb ? target & ~1u : target & ~3u;
+            const TBool thumb = (target & 1u) != 0;
+
+            SetThumbState(cpu, thumb);
+
+            cpu.r[15] = thumb
+                ? (target & ~1u)
+                : (target & ~3u);
 
             return ENgbaCpuOk;
         }
 
         // BIOS SWI - ARM mode.
-        // Nomor SWI ARM berada pada bit 16-23.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
@@ -647,6 +668,8 @@ namespace
 
             if (instruction & (1u << 24))
                 cpu.r[14] = address + 4;
+
+            SetThumbState(cpu, EFalse);
 
             cpu.r[15] = address + 8 +
                         static_cast<TUint32>(displacement);
@@ -695,7 +718,10 @@ namespace
                     : ReadWordRotated(memoryAddress);
 
                 if (rd == 15)
+                {
+                    SetThumbState(cpu, EFalse);
                     cpu.r[15] = value & ~3u;
+                }
                 else
                     cpu.r[rd] = value;
             }
@@ -824,7 +850,10 @@ namespace
             if (writeResult)
             {
                 if (rd == 15)
+                {
+                    SetThumbState(cpu, EFalse);
                     cpu.r[15] = result & ~3u;
+                }
                 else
                     cpu.r[rd] = result;
             }
@@ -1268,15 +1297,9 @@ namespace
                     const TUint32 value =
                         NgbaMemoryRead32(memoryAddress);
 
-                    if (value & 1u)
-                    {
-                        cpu.thumb = ETrue;
-                        cpu.r[15] = value & ~1u;
-                    }
-                    else
-                    {
-                        cpu.r[14] = value;
-                    }
+                    // POP {PC}: tetap dalam Thumb state.
+                    SetThumbState(cpu, ETrue);
+                    cpu.r[15] = value & ~1u;
 
                     memoryAddress += 4;
                 }
@@ -1349,6 +1372,8 @@ namespace
 
                 offset *= 2;
 
+                SetThumbState(cpu, ETrue);
+
                 cpu.r[15] = address + 4 +
                             static_cast<TUint32>(offset);
             }
@@ -1366,6 +1391,8 @@ namespace
                 offset |= static_cast<TInt16>(0xF800);
 
             offset *= 2;
+
+            SetThumbState(cpu, ETrue);
 
             cpu.r[15] = address + 4 +
                         static_cast<TUint32>(offset);
@@ -1395,19 +1422,26 @@ namespace
                 cpu.r[14] + ((instruction & 0x07FFu) * 2);
 
             cpu.r[14] = (address + 2) | 1u;
+
+            SetThumbState(cpu, ETrue);
             cpu.r[15] = target & ~1u;
 
             return ENgbaCpuOk;
         }
 
-        // BX.
+        // BX: perpindahan Thumb / ARM.
         if ((instruction & 0xFF87u) == 0x4700u)
         {
             const TInt rm = (instruction >> 3) & 15;
             const TUint32 target = ReadRegister(cpu, rm, address);
 
-            cpu.thumb = (target & 1u) != 0;
-            cpu.r[15] = cpu.thumb ? target & ~1u : target & ~3u;
+            const TBool thumb = (target & 1u) != 0;
+
+            SetThumbState(cpu, thumb);
+
+            cpu.r[15] = thumb
+                ? (target & ~1u)
+                : (target & ~3u);
 
             return ENgbaCpuOk;
         }
@@ -1428,7 +1462,7 @@ namespace
             {
                 if (rd == 15)
                 {
-                    cpu.thumb = ETrue;
+                    SetThumbState(cpu, ETrue);
                     cpu.r[15] = value & ~1u;
                 }
                 else
@@ -1446,7 +1480,7 @@ namespace
             {
                 if (rd == 15)
                 {
-                    cpu.thumb = ETrue;
+                    SetThumbState(cpu, ETrue);
                     cpu.r[15] = (cpu.r[15] + value) & ~1u;
                 }
                 else
@@ -1476,7 +1510,7 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     cpu.cpsr = 0x000000DFu;
 
     cpu.halted = EFalse;
-    cpu.thumb = EFalse;
+    SetThumbState(cpu, EFalse);
 
     cpu.cycles = 0;
 
@@ -1494,6 +1528,9 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
 
     if (cpu.halted)
         return ENgbaCpuUnsupported;
+
+    // Pastikan bit T CPSR mengikuti status CPU.
+    SetThumbState(cpu, cpu.thumb);
 
     const TUint32 address = cpu.r[15];
 
@@ -1514,9 +1551,15 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
         const TInt result = ExecuteThumb(cpu, instruction, address);
 
         if (result == ENgbaCpuOk)
+        {
+            SetThumbState(cpu, cpu.thumb);
             ++cpu.cycles;
+        }
         else
+        {
             cpu.r[15] = address;
+            SetThumbState(cpu, cpu.thumb);
+        }
 
         return result;
     }
@@ -1534,9 +1577,15 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     const TInt result = ExecuteArm(cpu, instruction, address);
 
     if (result == ENgbaCpuOk)
+    {
+        SetThumbState(cpu, cpu.thumb);
         ++cpu.cycles;
+    }
     else
+    {
         cpu.r[15] = address;
+        SetThumbState(cpu, cpu.thumb);
+    }
 
     return result;
 }
