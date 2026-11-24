@@ -1,4 +1,3 @@
-
 #include "gba_memory.h"
 
 #include <e32std.h>
@@ -33,15 +32,12 @@ namespace
     TUint8 gOam[KOamSize];
     TUint8 gSram[KSramSize];
 
-    // Mode pointer.
     const TUint8* gRom = NULL;
 
-    // Mode file.
     RFs gRomFs;
     RFile gRomFile;
     TBool gRomFileOpen = EFalse;
 
-    // Cache ROM 4 KB.
     TUint8 gRomCache[KRomCacheSize];
     TInt gRomCacheStart = -1;
     TInt gRomCacheLength = 0;
@@ -122,15 +118,12 @@ namespace
             offset % static_cast<TUint32>(gRomSize)
         );
 
-        // Mode pointer untuk self-test.
         if (gRom != NULL)
             return gRom[romOffset];
 
-        // Mode file-backed.
         if (!gRomFileOpen)
             return 0;
 
-        // Periksa apakah alamat berada dalam cache.
         if (gRomCacheStart >= 0 &&
             romOffset >= gRomCacheStart &&
             romOffset < gRomCacheStart + gRomCacheLength)
@@ -140,7 +133,6 @@ namespace
             ];
         }
 
-        // Cache miss: baca blok 4 KB dari file.
         const TInt blockStart =
             (romOffset / KRomCacheSize) * KRomCacheSize;
 
@@ -340,7 +332,6 @@ namespace
             return;
         }
 
-        // ROM tidak dapat ditulis.
         if (aAddress >= KRomBase &&
             aAddress < 0x0E000000u)
             return;
@@ -455,6 +446,75 @@ void NgbaMemoryShutdown()
     gRomCacheLength = 0;
 
     ClearMemory();
+}
+
+// ---------------------------------------------------------
+// BIOS HLE: SWI 01h - RegisterRamReset
+//
+// R0 flags:
+// bit 0 = EWRAM
+// bit 1 = IWRAM
+// bit 2 = Palette RAM
+// bit 3 = VRAM
+// bit 4 = OAM
+// bit 5 = SIO registers
+// bit 6 = Sound registers
+// bit 7 = Other registers
+// ---------------------------------------------------------
+
+void NgbaMemoryRegisterRamReset(TUint32 aFlags)
+{
+    if (!gReady)
+        return;
+
+    if (aFlags & (1u << 0))
+        Mem::FillZ(gEwram, sizeof(gEwram));
+
+    if (aFlags & (1u << 1))
+        Mem::FillZ(gIwram, sizeof(gIwram));
+
+    if (aFlags & (1u << 2))
+        Mem::FillZ(gPalette, sizeof(gPalette));
+
+    if (aFlags & (1u << 3))
+        Mem::FillZ(gVram, sizeof(gVram));
+
+    if (aFlags & (1u << 4))
+        Mem::FillZ(gOam, sizeof(gOam));
+
+    if (aFlags & (1u << 5))
+    {
+        Mem::FillZ(
+            &gIo[0x120],
+            0x0C
+        );
+    }
+
+    if (aFlags & (1u << 6))
+    {
+        Mem::FillZ(
+            &gIo[0x060],
+            0x48
+        );
+    }
+
+    if (aFlags & (1u << 7))
+    {
+        Mem::FillZ(
+            &gIo[0x000],
+            0x060
+        );
+
+        Mem::FillZ(
+            &gIo[0x0A8],
+            0x078
+        );
+
+        Mem::FillZ(
+            &gIo[0x134],
+            0x2CC
+        );
+    }
 }
 
 TUint8 NgbaMemoryRead8(TUint32 aAddress)
