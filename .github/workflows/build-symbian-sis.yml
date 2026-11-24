@@ -1,0 +1,159 @@
+
+name: N-GBA - Symbian SIS/SISX Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.cpp'
+      - '**.cc'
+      - '**.h'
+      - '**.hpp'
+      - '**.cmake'
+      - 'CMakeLists.txt'
+      - 'symbian.toml'
+      - '.github/workflows/build-symbian-sis.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build N-GBA for Symbian EKA2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout N-GBA source
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Symbian platform tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install symbian-platform==0.3.0
+          symbian --help
+          symbian doctor
+
+      - name: Download Symbian ARM SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK_VERSION="0.3.0"
+          SDK_ARCHIVE="symbian-sdk-${SDK_VERSION}-linux-x86_64.tar.gz"
+          SDK_URL="https://github.com/hpnkv/symbian-platform/releases/download/v${SDK_VERSION}/${SDK_ARCHIVE}"
+
+          curl -fL "$SDK_URL" -o "$RUNNER_TEMP/$SDK_ARCHIVE"
+
+          mkdir -p "$RUNNER_TEMP/symbian-sdk"
+          symbian sdk install \
+            "$RUNNER_TEMP/symbian-sdk" \
+            --archive "$RUNNER_TEMP/$SDK_ARCHIVE"
+
+          echo "SYMBIAN_SDK=$RUNNER_TEMP/symbian-sdk" >> "$GITHUB_ENV"
+
+      - name: Verify project configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Project directory:"
+          pwd
+
+          test -f CMakeLists.txt || {
+            echo "::error::CMakeLists.txt not found in repository root"
+            exit 1
+          }
+
+          test -f symbian.toml || {
+            echo "::error::symbian.toml not found. Symbian package metadata is required."
+            exit 1
+          }
+
+          echo "Project configuration:"
+          cat symbian.toml
+
+      - name: Build ARM Symbian application
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          symbian toolchain probe
+          symbian app build --project "$GITHUB_WORKSPACE"
+
+      - name: Locate E32 executable
+        id: e32
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t FILES < <(
+            find .symbian -type f -name '*.exe' \
+              ! -name '*-signed.exe' | sort
+          )
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "::error::No E32 executable found in .symbian"
+            find .symbian -maxdepth 5 -type f || true
+            exit 1
+          fi
+
+          echo "Found E32 files:"
+          printf '%s\n' "${FILES[@]}"
+
+          E32_FILE="${FILES[0]}"
+          echo "file=$E32_FILE" >> "$GITHUB_OUTPUT"
+
+          symbian inspect --format e32 "$E32_FILE"
+
+      - name: Create SIS installer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/.symbian/package"
+
+          symbian package \
+            --project "$GITHUB_WORKSPACE" \
+            --artifact "${{ steps.e32.outputs.file }}" \
+            --output "$GITHUB_WORKSPACE/.symbian/package"
+
+          echo "Package output:"
+          find .symbian/package -maxdepth 2 -type f -print
+
+      - name: Validate SIS installer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t SIS_FILES < <(
+            find .symbian/package -maxdepth 2 -type f -name '*.sis' | sort
+          )
+
+          if [ "${#SIS_FILES[@]}" -eq 0 ]; then
+            echo "::error::SIS package was not generated"
+            exit 1
+          fi
+
+          for SIS in "${SIS_FILES[@]}"; do
+            echo "Checking: $SIS"
+            symbian inspect --format sis "$SIS"
+          done
+
+      - name: Upload SIS/SISX artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: N-GBA-Symbian-SISX
+          path: |
+            .symbian/package/*.sis
+            .symbian/package/package-report.json
+          if-no-files-found: error
+          retention-days: 30
