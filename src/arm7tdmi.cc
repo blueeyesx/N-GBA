@@ -622,11 +622,11 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
-// Nomor SWI GBA berada pada bit 16-23.
-if ((instruction & 0x0F000000u) == 0x0F000000u)
-{
-    const TUint32 swiNumber =
-        (instruction >> 16) & 0xFFu;
+        // Nomor SWI GBA berada pada bit 16-23.
+        if ((instruction & 0x0F000000u) == 0x0F000000u)
+        {
+            const TUint32 swiNumber =
+                (instruction >> 16) & 0xFFu;
 
             switch (swiNumber)
             {
@@ -1470,7 +1470,8 @@ if ((instruction & 0x0F000000u) == 0x0F000000u)
             return ENgbaCpuOk;
         }
 
-        // BX: perpindahan Thumb / ARM.
+        // BX: harus diperiksa SEBELUM High-register MOV/CMP/ADD.
+        // Contoh instruksi: 0x4700, 0x4770.
         if ((instruction & 0xFF87u) == 0x4700u)
         {
             const TInt rm = (instruction >> 3) & 15;
