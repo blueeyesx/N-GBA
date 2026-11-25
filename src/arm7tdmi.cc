@@ -1,4 +1,3 @@
-
 #include "arm7tdmi.h"
 #include "gba_memory.h"
 
@@ -171,6 +170,10 @@ namespace
         return RotateRight(value, amount);
     }
 
+    // Perhitungan flag aritmetika ARM.
+    // carryIn:
+    // - ADD/ADC: tambahan carry.
+    // - SUB/SBC/RSC: nilai borrow.
     void SetArithmeticFlags(
         TNgbaCpuState& cpu,
         TUint32 left,
@@ -181,24 +184,44 @@ namespace
     )
     {
         SetNzFlags(cpu, result);
+
         cpu.cpsr &= ~(KFlagC | KFlagV);
 
         if (subtract)
         {
+            // Carry pada operasi pengurangan berarti TIDAK ada borrow.
             const TUint64 subtrahend =
-                static_cast<TUint64>(right) + carryIn;
+                static_cast<TUint64>(right) +
+                static_cast<TUint64>(carryIn);
 
             if (static_cast<TUint64>(left) >= subtrahend)
                 cpu.cpsr |= KFlagC;
 
-            const TUint32 overflow =
-                (left ^ right) & (left ^ result);
+            // Overflow dihitung menggunakan operand bertanda
+            // dan memperhitungkan borrow.
+            const TInt64 signedLeft =
+                static_cast<TInt64>(
+                    static_cast<TInt32>(left)
+                );
 
-            if (overflow & 0x80000000u)
+            const TInt64 signedRight =
+                static_cast<TInt64>(
+                    static_cast<TInt32>(right)
+                );
+
+            const TInt64 signedResult =
+                signedLeft - signedRight -
+                static_cast<TInt64>(carryIn);
+
+            if (signedResult > 2147483647LL ||
+                signedResult < (-2147483647LL - 1LL))
+            {
                 cpu.cpsr |= KFlagV;
+            }
         }
         else
         {
+            // Carry pada operasi penjumlahan.
             const TUint64 wide =
                 static_cast<TUint64>(left) +
                 static_cast<TUint64>(right) +
@@ -207,11 +230,26 @@ namespace
             if (wide >> 32)
                 cpu.cpsr |= KFlagC;
 
-            const TUint32 overflow =
-                ~(left ^ right) & (left ^ result);
+            // Overflow signed untuk ADD dan ADC.
+            const TInt64 signedLeft =
+                static_cast<TInt64>(
+                    static_cast<TInt32>(left)
+                );
 
-            if (overflow & 0x80000000u)
+            const TInt64 signedRight =
+                static_cast<TInt64>(
+                    static_cast<TInt32>(right)
+                );
+
+            const TInt64 signedResult =
+                signedLeft + signedRight +
+                static_cast<TInt64>(carryIn);
+
+            if (signedResult > 2147483647LL ||
+                signedResult < (-2147483647LL - 1LL))
+            {
                 cpu.cpsr |= KFlagV;
+            }
         }
     }
 
@@ -622,7 +660,6 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
-        // Nomor SWI GBA berada pada bit 16-23.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
@@ -813,8 +850,13 @@ namespace
 
             switch (opcode)
             {
-            case 0: result = left & right; break;
-            case 1: result = left ^ right; break;
+            case 0:
+                result = left & right;
+                break;
+
+            case 1:
+                result = left ^ right;
+                break;
 
             case 2:
                 result = left - right;
@@ -876,10 +918,21 @@ namespace
                 writeResult = EFalse;
                 break;
 
-            case 12: result = left | right; break;
-            case 13: result = right; break;
-            case 14: result = left & ~right; break;
-            case 15: result = ~right; break;
+            case 12:
+                result = left | right;
+                break;
+
+            case 13:
+                result = right;
+                break;
+
+            case 14:
+                result = left & ~right;
+                break;
+
+            case 15:
+                result = ~right;
+                break;
 
             default:
                 return ENgbaCpuUnsupported;
@@ -897,29 +950,25 @@ namespace
             }
 
             if (setFlags || !writeResult)
-{
-    if (arithmetic)
-    {
-        SetArithmeticFlags(
-            cpu,
-            (opcode == 7) ? right : left,
-            (opcode == 7) ? left : right,
-            result,
-            subtract,
-            carryIn
-        );
-    }
-    else
-    {
-        SetNzFlags(cpu, result);
-        SetCarry(cpu, carry);
-    }
-}
-else
-{
-    SetNzFlags(cpu, result);
-    SetCarry(cpu, carry);
-}
+            {
+                if (arithmetic)
+                {
+                    // RSC: Operand2 - Rn - borrow.
+                    // Operand kiri dan kanan harus ditukar.
+                    SetArithmeticFlags(
+                        cpu,
+                        (opcode == 7) ? right : left,
+                        (opcode == 7) ? left : right,
+                        result,
+                        subtract,
+                        carryIn
+                    );
+                }
+                else
+                {
+                    SetNzFlags(cpu, result);
+                    SetCarry(cpu, carry);
+                }
             }
 
             return ENgbaCpuOk;
@@ -1039,11 +1088,25 @@ else
 
             switch (opcode)
             {
-            case 0: result = left & right; break;
-            case 1: result = left ^ right; break;
-            case 2: result = ShiftValue(left, 0, right & 0xFFu, carry); break;
-            case 3: result = ShiftValue(left, 1, right & 0xFFu, carry); break;
-            case 4: result = ShiftValue(left, 2, right & 0xFFu, carry); break;
+            case 0:
+                result = left & right;
+                break;
+
+            case 1:
+                result = left ^ right;
+                break;
+
+            case 2:
+                result = ShiftValue(left, 0, right & 0xFFu, carry);
+                break;
+
+            case 3:
+                result = ShiftValue(left, 1, right & 0xFFu, carry);
+                break;
+
+            case 4:
+                result = ShiftValue(left, 2, right & 0xFFu, carry);
+                break;
 
             case 5:
             {
@@ -1075,7 +1138,9 @@ else
                 return ENgbaCpuOk;
             }
 
-            case 7: result = ShiftValue(left, 3, right & 0xFFu, carry); break;
+            case 7:
+                result = ShiftValue(left, 3, right & 0xFFu, carry);
+                break;
 
             case 8:
                 result = left & right;
@@ -1097,10 +1162,21 @@ else
                 SetArithmeticFlags(cpu, left, right, result, EFalse);
                 return ENgbaCpuOk;
 
-            case 12: result = left | right; break;
-            case 13: result = left * right; break;
-            case 14: result = left & ~right; break;
-            case 15: result = ~right; break;
+            case 12:
+                result = left | right;
+                break;
+
+            case 13:
+                result = left * right;
+                break;
+
+            case 14:
+                result = left & ~right;
+                break;
+
+            case 15:
+                result = ~right;
+                break;
             }
 
             cpu.r[rd] = result;
@@ -1476,8 +1552,7 @@ else
             return ENgbaCpuOk;
         }
 
-        // BX: harus diperiksa SEBELUM High-register MOV/CMP/ADD.
-        // Contoh instruksi: 0x4700, 0x4770.
+        // BX: harus diperiksa sebelum High-register MOV/CMP/ADD.
         if ((instruction & 0xFF87u) == 0x4700u)
         {
             const TInt rm = (instruction >> 3) & 15;
@@ -1594,9 +1669,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     cpu.lastOpcode = 0;
     cpu.lastInstructionSize = 0;
 
-    // -----------------------------------------------------
-    // THUMB MODE: instruksi 16-bit
-    // -----------------------------------------------------
+    // THUMB MODE: instruksi 16-bit.
     if (previousThumb)
     {
         if (address & 1u)
@@ -1627,9 +1700,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
         return result;
     }
 
-    // -----------------------------------------------------
-    // ARM MODE: instruksi 32-bit
-    // -----------------------------------------------------
+    // ARM MODE: instruksi 32-bit.
     if (address & 3u)
         return ENgbaCpuBadArgument;
 
