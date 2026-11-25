@@ -1,3 +1,4 @@
+
 #include "arm7tdmi.h"
 #include "gba_memory.h"
 
@@ -56,7 +57,12 @@ namespace
     )
     {
         if (index == 15)
-            return address + (cpu.thumb ? 4u : 8u);
+        {
+            if (cpu.thumb)
+                return address + 4u;
+
+            return address + 8u;
+        }
 
         return cpu.r[index & 15];
     }
@@ -172,8 +178,9 @@ namespace
 
     // Perhitungan flag aritmetika ARM.
     // carryIn:
-    // - ADD/ADC: tambahan carry.
-    // - SUB/SBC/RSC: nilai borrow.
+    // ADD/ADC  = carry tambahan.
+    // SUB/SBC  = borrow.
+    // RSC      = borrow.
     void SetArithmeticFlags(
         TNgbaCpuState& cpu,
         TUint32 left,
@@ -189,7 +196,6 @@ namespace
 
         if (subtract)
         {
-            // Carry pada operasi pengurangan berarti TIDAK ada borrow.
             const TUint64 subtrahend =
                 static_cast<TUint64>(right) +
                 static_cast<TUint64>(carryIn);
@@ -197,8 +203,6 @@ namespace
             if (static_cast<TUint64>(left) >= subtrahend)
                 cpu.cpsr |= KFlagC;
 
-            // Overflow dihitung menggunakan operand bertanda
-            // dan memperhitungkan borrow.
             const TInt64 signedLeft =
                 static_cast<TInt64>(
                     static_cast<TInt32>(left)
@@ -221,7 +225,6 @@ namespace
         }
         else
         {
-            // Carry pada operasi penjumlahan.
             const TUint64 wide =
                 static_cast<TUint64>(left) +
                 static_cast<TUint64>(right) +
@@ -230,7 +233,6 @@ namespace
             if (wide >> 32)
                 cpu.cpsr |= KFlagC;
 
-            // Overflow signed untuk ADD dan ADC.
             const TInt64 signedLeft =
                 static_cast<TInt64>(
                     static_cast<TInt32>(left)
@@ -639,6 +641,12 @@ namespace
     {
         const TUint32 condition = instruction >> 28;
 
+        // Kondisi 0xF bukan kondisi biasa pada ARM7TDMI.
+        // Jangan dilewati diam-diam karena dapat menyembunyikan
+        // kesalahan mode atau instruksi yang belum didukung.
+        if (condition == 0xFu)
+            return ENgbaCpuUnsupported;
+
         if (!ConditionPassed(cpu.cpsr, condition))
             return ENgbaCpuOk;
 
@@ -953,8 +961,6 @@ namespace
             {
                 if (arithmetic)
                 {
-                    // RSC: Operand2 - Rn - borrow.
-                    // Operand kiri dan kanan harus ditukar.
                     SetArithmeticFlags(
                         cpu,
                         (opcode == 7) ? right : left,
@@ -1552,7 +1558,7 @@ namespace
             return ENgbaCpuOk;
         }
 
-        // BX: harus diperiksa sebelum High-register MOV/CMP/ADD.
+        // BX: perpindahan ARM / Thumb.
         if ((instruction & 0xFF87u) == 0x4700u)
         {
             const TInt rm = (instruction >> 3) & 15;
@@ -1603,7 +1609,10 @@ namespace
             {
                 if (rd == 15)
                 {
-                    const TUint32 pcValue = address + 4u;
+                    // Thumb ADD PC, Rm:
+                    // PC harus disejajarkan ke batas 4 byte.
+                    const TUint32 pcValue =
+                        (address + 4u) & ~3u;
 
                     SetThumbState(cpu, ETrue);
                     cpu.r[15] = (pcValue + value) & ~1u;
@@ -1659,7 +1668,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     if (cpu.halted)
         return ENgbaCpuUnsupported;
 
-    // Sinkronkan status T pada CPSR dan variabel mode CPU.
+    // Sinkronkan status T pada CPSR dengan mode CPU.
     SetThumbState(cpu, cpu.thumb);
 
     const TBool previousThumb = cpu.thumb;
