@@ -622,11 +622,11 @@ namespace
         }
 
         // BIOS SWI - ARM mode.
-// Nomor SWI GBA berada pada 24 bit terendah.
+// Nomor SWI GBA berada pada bit 16-23.
 if ((instruction & 0x0F000000u) == 0x0F000000u)
 {
     const TUint32 swiNumber =
-    (instruction >> 16) & 0xFFu;
+        (instruction >> 16) & 0xFFu;
 
             switch (swiNumber)
             {
