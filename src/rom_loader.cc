@@ -17,6 +17,8 @@ namespace
     const TInt KMaximumRomSize = 32 * 1024 * 1024;
 
     _LIT(KGameConfigPath, "E:\\GBA\\game_config.ini");
+    _LIT(KConfigLogFolder, "E:\\GBA\\");
+    _LIT(KConfigLogFile, "E:\\GBA\\ngba.log");
 
     void ResetGameConfig(TNgbaGameConfig& aConfig)
     {
@@ -26,6 +28,130 @@ namespace
         aConfig.flashRomSize = 0;
         aConfig.hasIdleLoopTarget = EFalse;
         aConfig.found = EFalse;
+    }
+
+    void WriteConfigLog(const TDesC& aMessage)
+    {
+        RFs fs;
+
+        if (fs.Connect() != KErrNone)
+            return;
+
+        TInt error = fs.MkDirAll(KConfigLogFolder);
+
+        if (error != KErrNone &&
+            error != KErrAlreadyExists)
+        {
+            fs.Close();
+            return;
+        }
+
+        RFile file;
+
+        error = file.Open(
+            fs,
+            KConfigLogFile,
+            EFileWrite | EFileShareAny
+        );
+
+        if (error == KErrNotFound ||
+            error == KErrPathNotFound)
+        {
+            error = file.Create(
+                fs,
+                KConfigLogFile,
+                EFileWrite | EFileShareAny
+            );
+        }
+
+        if (error == KErrNone)
+        {
+            TInt position = 0;
+
+            error = file.Seek(ESeekEnd, position);
+
+            if (error == KErrNone)
+            {
+                TBuf8<256> line;
+                line.Append(_L8("N-GBA | "));
+
+                for (TInt i = 0;
+                     i < aMessage.Length() &&
+                     line.Length() < 250;
+                     ++i)
+                {
+                    const TUint16 c = aMessage[i];
+
+                    line.Append(
+                        c <= 255
+                        ? static_cast<TUint8>(c)
+                        : static_cast<TUint8>('?')
+                    );
+                }
+
+                line.Append(_L8("\r\n"));
+                file.Write(line);
+            }
+
+            file.Close();
+        }
+
+        fs.Close();
+    }
+
+    void LogGameConfigStatus()
+    {
+        TBuf<100> message;
+
+        if (!gGameConfig.found)
+        {
+            WriteConfigLog(
+                _L("GAME CONFIG NOT FOUND")
+            );
+            return;
+        }
+
+        message.Copy(_L("GAME CONFIG FOUND: "));
+        message.Append(gGameConfig.gameCode);
+        WriteConfigLog(message);
+
+        if (gGameConfig.flashRomSize > 0)
+        {
+            message.Zero();
+            message.Copy(_L("FLASH TYPE: "));
+            message.AppendNum(
+                gGameConfig.flashRomSize / 1024
+            );
+            message.Append(_L("KB"));
+
+            WriteConfigLog(message);
+        }
+        else
+        {
+            WriteConfigLog(
+                _L("FLASH TYPE: NOT SPECIFIED")
+            );
+        }
+
+        if (gGameConfig.hasIdleLoopTarget)
+        {
+            message.Zero();
+            message.Copy(_L("IDLE LOOP TARGET: 0x"));
+            message.AppendNum(
+                static_cast<TInt>(
+                    gGameConfig.idleLoopTarget
+                ),
+                EHex
+            );
+
+            WriteConfigLog(message);
+        }
+        else
+        {
+            WriteConfigLog(
+                _L("IDLE LOOP TARGET: NOT SPECIFIED")
+            );
+        }
     }
 
     void TrimText(TPtrC8& aText)
@@ -358,6 +484,9 @@ TInt NgbaLoadRom(
 
     // Baca konfigurasi khusus game.
     LoadGameConfig();
+
+    // Catat hasil pembacaan konfigurasi.
+    LogGameConfigStatus();
 
     return KErrNone;
 }
