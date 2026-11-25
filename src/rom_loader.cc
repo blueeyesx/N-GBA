@@ -112,7 +112,20 @@ namespace
         }
 
         message.Copy(_L("GAME CONFIG FOUND: "));
-        message.Append(gGameConfig.gameCode);
+
+        // Konversi gameCode dari descriptor 8-bit
+        // ke descriptor 16-bit secara karakter per karakter.
+        for (TInt i = 0;
+             i < gGameConfig.gameCode.Length();
+             ++i)
+        {
+            message.Append(
+                static_cast<TUint16>(
+                    gGameConfig.gameCode[i]
+                )
+            );
+        }
+
         WriteConfigLog(message);
 
         if (gGameConfig.flashRomSize > 0)
@@ -262,7 +275,6 @@ namespace
         }
 
         TBuf8<4096> data;
-
         error = file.Read(data);
 
         file.Close();
