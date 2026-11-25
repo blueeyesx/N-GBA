@@ -406,9 +406,9 @@ namespace
         // Rutinitas IRQ BIOS GBA di 0x00000128:
         // STMFD SP!, {R0-R3, R12, LR}
         WriteBiosWord(0x0128u, 0xE92D500Fu);
-        // MOV R0, #0x03000000
-        WriteBiosWord(0x012Cu, 0xE3A00C30u);
-        // ADD R0, R0, #0x7F00
+        // MOV R0, #0x03000000 (0x30 ROR 8 -> rotate_imm=4 -> 0xE3A00430)
+        WriteBiosWord(0x012Cu, 0xE3A00430u);
+        // ADD R0, R0, #0x7F00 (0x7F ROR 24 -> rotate_imm=12 -> 0xE2800C7F) -> R0 = 0x03007F00
         WriteBiosWord(0x0130u, 0xE2800C7Fu);
         // ADD LR, PC, #0  (LR = 0x0000013C)
         WriteBiosWord(0x0134u, 0xE28FE000u);
@@ -1029,10 +1029,16 @@ void NgbaMemoryWrite16(
             const TUint16 currentIf = static_cast<TUint16>(
                 gIo[offset] | (static_cast<TUint16>(gIo[offset + 1]) << 8)
             );
+            const TUint16 clearedMask = static_cast<TUint16>(currentIf & aValue);
             const TUint16 updatedIf =
                 static_cast<TUint16>(currentIf & ~aValue);
             gIo[offset] = static_cast<TUint8>(updatedIf);
             gIo[offset + 1] = static_cast<TUint8>(updatedIf >> 8);
+            if (clearedMask != 0u)
+            {
+                const TUint16 prevWake = NgbaMemoryRead16(0x03007FF8u);
+                NgbaMemoryWrite16(0x03007FF8u, static_cast<TUint16>(prevWake | clearedMask));
+            }
             return;
         }
 

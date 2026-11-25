@@ -1797,77 +1797,13 @@ void NgbaPpuWriteIo32(
 
 
     // ---------------------------------------------------------
-    // FPS COUNTER & SAFE TOP-LEFT OVERLAY (NO WINDOW GC / DSA CONFLICT)
+    // FPS COUNTER (PURE CALCULATION - DOES NOT TOUCH GAME FRAMEBUFFER)
     // ---------------------------------------------------------
 
     TBool   gShowFps        = ETrue;
     TInt    gCurrentFps     = 0;
     TInt    gFpsFrameWindow = 0;
     TUint32 gFpsLastTick    = 0;
-
-    const TUint8 KGlyph0[7] = { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E };
-    const TUint8 KGlyph1[7] = { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E };
-    const TUint8 KGlyph2[7] = { 0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F };
-    const TUint8 KGlyph3[7] = { 0x1F, 0x02, 0x04, 0x06, 0x01, 0x11, 0x0E };
-    const TUint8 KGlyph4[7] = { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 };
-    const TUint8 KGlyph5[7] = { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E };
-    const TUint8 KGlyph6[7] = { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E };
-    const TUint8 KGlyph7[7] = { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 };
-    const TUint8 KGlyph8[7] = { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E };
-    const TUint8 KGlyph9[7] = { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x1C };
-    const TUint8 KGlyphF[7] = { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 };
-    const TUint8 KGlyphP[7] = { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 };
-    const TUint8 KGlyphS[7] = { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E };
-    const TUint8 KGlyphCol[7] = { 0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00 };
-
-    const TUint8* GetGlyph5x7(TChar aCh)
-    {
-        switch (aCh)
-        {
-        case '0': return KGlyph0;
-        case '1': return KGlyph1;
-        case '2': return KGlyph2;
-        case '3': return KGlyph3;
-        case '4': return KGlyph4;
-        case '5': return KGlyph5;
-        case '6': return KGlyph6;
-        case '7': return KGlyph7;
-        case '8': return KGlyph8;
-        case '9': return KGlyph9;
-        case 'F': return KGlyphF;
-        case 'P': return KGlyphP;
-        case 'S': return KGlyphS;
-        case ':': return KGlyphCol;
-        default:  return NULL;
-        }
-    }
-
-    void DrawChar5x7ToBuffer(TInt aX, TInt aY, TChar aCh, TUint16 aFgColor)
-    {
-        const TUint8* glyph = GetGlyph5x7(aCh);
-        if (glyph == NULL)
-            return;
-
-        for (TInt row = 0; row < 7; ++row)
-        {
-            const TInt py = aY + row;
-            if (py < 0 || py >= KGbaScreenHeight)
-                continue;
-
-            const TUint8 bits = glyph[row];
-            for (TInt col = 0; col < 5; ++col)
-            {
-                const TInt px = aX + col;
-                if (px < 0 || px >= KGbaScreenWidth)
-                    continue;
-
-                if (bits & (1u << (4 - col)))
-                {
-                    gPpu.frameBuffer[py * KGbaScreenWidth + px] = aFgColor;
-                }
-            }
-        }
-    }
 
     void UpdateFpsCounter()
     {
@@ -1877,63 +1813,23 @@ void NgbaPpuWriteIo32(
         if (gFpsLastTick == 0u)
         {
             gFpsLastTick = nowTick;
-        }
-        else
-        {
-            const TUint32 deltaTicks = nowTick - gFpsLastTick;
-            if (deltaTicks >= 32u)
-            {
-                gCurrentFps = static_cast<TInt>(
-                    (gFpsFrameWindow * 64) / static_cast<TInt>(deltaTicks)
-                );
-                if (gCurrentFps < 0)
-                    gCurrentFps = 0;
-                if (gCurrentFps > 999)
-                    gCurrentFps = 999;
-
-                gFpsFrameWindow = 0;
-                gFpsLastTick = nowTick;
-            }
-        }
-
-        if (!gShowFps)
             return;
-
-        // Gambar indikator FPS kecil di pojok kiri atas buffer frame (tanpa menyentuh CWindowGc/DSA)
-        const TInt boxX = 2;
-        const TInt boxY = 2;
-        const TInt boxW = 46;
-        const TInt boxH = 11;
-
-        for (TInt y = boxY; y < boxY + boxH && y < KGbaScreenHeight; ++y)
-        {
-            for (TInt x = boxX; x < boxX + boxW && x < KGbaScreenWidth; ++x)
-            {
-                gPpu.frameBuffer[y * KGbaScreenWidth + x] = 0x0000u;
-            }
         }
 
-        const TUint16 fpsColor = 0x03E0u;
-        TInt cx = boxX + 2;
-        const TInt cy = boxY + 2;
-
-        DrawChar5x7ToBuffer(cx, cy, 'F', fpsColor); cx += 6;
-        DrawChar5x7ToBuffer(cx, cy, 'P', fpsColor); cx += 6;
-        DrawChar5x7ToBuffer(cx, cy, 'S', fpsColor); cx += 6;
-        DrawChar5x7ToBuffer(cx, cy, ':', fpsColor); cx += 6;
-
-        const TInt fpsVal = gCurrentFps;
-        if (fpsVal >= 100)
+        const TUint32 deltaTicks = nowTick - gFpsLastTick;
+        if (deltaTicks >= 32u)
         {
-            DrawChar5x7ToBuffer(cx, cy, static_cast<TChar>('0' + ((fpsVal / 100) % 10)), fpsColor);
-            cx += 6;
+            gCurrentFps = static_cast<TInt>(
+                (gFpsFrameWindow * 64) / static_cast<TInt>(deltaTicks)
+            );
+            if (gCurrentFps < 0)
+                gCurrentFps = 0;
+            if (gCurrentFps > 999)
+                gCurrentFps = 999;
+
+            gFpsFrameWindow = 0;
+            gFpsLastTick = nowTick;
         }
-        if (fpsVal >= 10)
-        {
-            DrawChar5x7ToBuffer(cx, cy, static_cast<TChar>('0' + ((fpsVal / 10) % 10)), fpsColor);
-            cx += 6;
-        }
-        DrawChar5x7ToBuffer(cx, cy, static_cast<TChar>('0' + (fpsVal % 10)), fpsColor);
     }
 
 void NgbaPpuRenderLine(TInt aLine)
