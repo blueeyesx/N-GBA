@@ -1,4 +1,6 @@
 #include "ngba_top_fps_overlay.h"
+#include <eikenv.h>
+#include <w32std.h>
 
 namespace
 {
@@ -76,7 +78,6 @@ void NgbaDrawTopLeftFpsToBitmap(CFbsBitmap& aScreenBitmap)
     TInt count = 0;
     BuildFpsChars(chars, count);
 
-    // Skala 2x agar tajam di layar 640x480 Nokia E6, di pojok kiri atas (x=6, y=6) di luar kotak game
     const TInt scale = (sz.iWidth >= 480) ? 2 : 1;
     const TInt startX = 6;
     const TInt startY = 6;
@@ -136,7 +137,7 @@ void NgbaDrawTopLeftFpsToBitmap(CFbsBitmap& aScreenBitmap)
                             {
                                 const TInt px = gx0 + c * scale + sx;
                                 if (px >= 0 && px < sz.iWidth)
-                                    row[px] = 0x07E0u; // Hijau terang RGB565
+                                    row[px] = 0x07E0u;
                             }
                         }
                         else
@@ -146,7 +147,7 @@ void NgbaDrawTopLeftFpsToBitmap(CFbsBitmap& aScreenBitmap)
                             {
                                 const TInt px = gx0 + c * scale + sx;
                                 if (px >= 0 && px < sz.iWidth)
-                                    row[px] = 0xFF00FF5Au; // Hijau terang XRGB8888
+                                    row[px] = 0xFF00FF5Au;
                             }
                         }
                     }
@@ -173,7 +174,6 @@ void NgbaDrawTopLeftFpsToGc(CGraphicsContext& aGc, const TRect& aScreenRect)
     const TInt boxW = (count * 6 + 3) * scale;
     const TInt boxH = 11 * scale;
 
-    // Gambar tanpa SetClippingRect atau CEikonEnv agar aman terhadap DSA / Window Server
     aGc.SetPenStyle(CGraphicsContext::ENullPen);
     aGc.SetBrushStyle(CGraphicsContext::ESolidBrush);
     aGc.SetBrushColor(TRgb(0, 0, 0));
@@ -205,4 +205,24 @@ void NgbaDrawTopLeftFpsToGc(CGraphicsContext& aGc, const TRect& aScreenRect)
             }
         }
     }
+}
+
+void NgbaDrawTopLeftFpsAuto()
+{
+    if (!NgbaPpuGetShowFps())
+        return;
+
+    CEikonEnv* env = CEikonEnv::Static();
+    if (!env)
+        return;
+
+    CWsScreenDevice* screenDev = env->ScreenDevice();
+    if (!screenDev)
+        return;
+
+    const TSize scrSize = screenDev->SizeInPixels();
+    CWindowGc& gc = env->SystemGc();
+    gc.Activate(*env->RootWin());
+    NgbaDrawTopLeftFpsToGc(gc, TRect(TPoint(0, 0), scrSize));
+    gc.Deactivate();
 }

@@ -320,13 +320,196 @@ namespace
         }
     }
 
+    // ---------------------------------------------------------
+    // TIMERS 0..3 (0x04000100 - 0x0400010F) & SERIAL SIO (0x04000120 - 0x0400012A)
+    // ---------------------------------------------------------
+    struct TGbaTimer
+    {
+        TUint16 reload;
+        TUint16 counter;
+        TUint16 control;
+        TUint32 subCycles;
+    };
+
+    TGbaTimer gTimers[4];
+
+    void ResetTimers()
+    {
+        for (TInt i = 0; i < 4; ++i)
+        {
+            gTimers[i].reload = 0;
+            gTimers[i].counter = 0;
+            gTimers[i].control = 0;
+            gTimers[i].subCycles = 0;
+        }
+    }
+
+    TUint32 GetTimerPrescaler(TUint16 aControl)
+    {
+        switch (aControl & 3u)
+        {
+        case 0: return 1u;
+        case 1: return 64u;
+        case 2: return 256u;
+        case 3:
+        default: return 1024u;
+        }
+    }
+
+    void OverflowTimer(TInt aIndex)
+    {
+        if (aIndex < 0 || aIndex >= 4)
+            return;
+
+        TGbaTimer& t = gTimers[aIndex];
+        t.counter = t.reload;
+
+        // Bit 6 (0x40) = Timer IRQ Enable -> IRQ bit (3 + aIndex)
+        if ((t.control & 0x0040u) != 0)
+        {
+            NgbaMemoryRaiseIrq(static_cast<TUint16>(1u << (3 + aIndex)));
+        }
+
+        // Cascade ke timer berikutnya jika bit 2 (0x04 = Count-up timing) aktif
+        if (aIndex + 1 < 4)
+        {
+            TGbaTimer& next = gTimers[aIndex + 1];
+            if ((next.control & 0x0080u) != 0 && (next.control & 0x0004u) != 0)
+            {
+                if (next.counter == 0xFFFFu)
+                {
+                    OverflowTimer(aIndex + 1);
+                }
+                else
+                {
+                    ++next.counter;
+                }
+            }
+        }
+    }
+
+    void StepTimers(TUint32 aCycles)
+    {
+        if (!gReady || aCycles == 0)
+            return;
+
+        for (TInt i = 0; i < 4; ++i)
+        {
+            TGbaTimer& t = gTimers[i];
+            if ((t.control & 0x0080u) == 0)
+                continue;
+
+            // Mode count-up (bit 2 = 1) dihitung dari overflow timer sebelumnya
+            if ((t.control & 0x0004u) != 0)
+                continue;
+
+            const TUint32 prescaler = GetTimerPrescaler(t.control);
+            t.subCycles += aCycles;
+            const TUint32 ticks = t.subCycles / prescaler;
+            t.subCycles %= prescaler;
+
+            if (ticks == 0)
+                continue;
+
+            const TUint32 remaining = 0x10000u - static_cast<TUint32>(t.counter);
+            if (ticks >= remaining)
+            {
+                TUint32 remTicks = ticks - remaining;
+                OverflowTimer(i);
+                const TUint32 span = (t.reload == 0)
+                    ? 0x10000u
+                    : (0x10000u - static_cast<TUint32>(t.reload));
+                if (span > 0 && remTicks >= span)
+                {
+                    remTicks %= span;
+                }
+                t.counter = static_cast<TUint16>(static_cast<TUint32>(t.counter) + remTicks);
+            }
+            else
+            {
+                t.counter = static_cast<TUint16>(static_cast<TUint32>(t.counter) + ticks);
+            }
+        }
+    }
+
+    void SyncTimerIoRegisters()
+    {
+        for (TInt i = 0; i < 4; ++i)
+        {
+            const TUint32 baseOff = static_cast<TUint32>(0x100 + i * 4);
+            gIo[baseOff + 0] = static_cast<TUint8>(gTimers[i].counter & 0xFFu);
+            gIo[baseOff + 1] = static_cast<TUint8>((gTimers[i].counter >> 8) & 0xFFu);
+            gIo[baseOff + 2] = static_cast<TUint8>(gTimers[i].control & 0xFFu);
+            gIo[baseOff + 3] = static_cast<TUint8>((gTimers[i].control >> 8) & 0xFFu);
+        }
+    }
+
+    void WriteTimerIo16(TUint32 aAddress, TUint16 aValue)
+    {
+        const TUint32 rel = aAddress - 0x04000100u;
+        const TInt idx = static_cast<TInt>(rel / 4u);
+        const TUint32 regOff = rel % 4u;
+        if (idx < 0 || idx >= 4)
+            return;
+
+        TGbaTimer& t = gTimers[idx];
+        if (regOff == 0u)
+        {
+            t.reload = aValue;
+            gIo[0x100 + idx * 4 + 0] = static_cast<TUint8>(aValue & 0xFFu);
+            gIo[0x100 + idx * 4 + 1] = static_cast<TUint8>((aValue >> 8) & 0xFFu);
+        }
+        else if (regOff == 2u)
+        {
+            const TBool wasEnabled = (t.control & 0x0080u) != 0;
+            const TBool nowEnabled = (aValue & 0x0080u) != 0;
+            t.control = aValue;
+            if (!wasEnabled && nowEnabled)
+            {
+                t.counter = t.reload;
+                t.subCycles = 0;
+            }
+            SyncTimerIoRegisters();
+        }
+    }
+
+    void HandleSerialWrite16(TUint32 aAddress, TUint16 aValue)
+    {
+        const TUint32 offset = aAddress - KIoBase;
+        gIo[offset + 0] = static_cast<TUint8>(aValue & 0xFFu);
+        gIo[offset + 1] = static_cast<TUint8>((aValue >> 8) & 0xFFu);
+
+        // SIOCNT (0x04000128): jika bit 7 (Start/Busy = 0x80) diset, selesaikan segera
+        // dengan data 0xFFFFFFFF (tidak ada link/wireless terhubung) agar game tidak menggantung.
+        if (aAddress == 0x04000128u && (aValue & 0x0080u) != 0)
+        {
+            gIo[0x120] = 0xFFu;
+            gIo[0x121] = 0xFFu;
+            gIo[0x122] = 0xFFu;
+            gIo[0x123] = 0xFFu;
+
+            const TUint16 clearedBusy = static_cast<TUint16>(aValue & ~0x0080u);
+            gIo[0x128] = static_cast<TUint8>(clearedBusy & 0xFFu);
+            gIo[0x129] = static_cast<TUint8>((clearedBusy >> 8) & 0xFFu);
+
+            if ((aValue & 0x4000u) != 0)
+            {
+                NgbaMemoryRaiseIrq(0x0080u);
+            }
+        }
+    }
+
     void OnPpuVBlank()
     {
+        StepTimers(1232u);
+        SyncTimerIoRegisters();
         TriggerDmaByTiming(1);
     }
 
     void OnPpuHBlank()
     {
+        StepTimers(1232u);
+        SyncTimerIoRegisters();
         TriggerDmaByTiming(2);
     }
 
@@ -399,6 +582,14 @@ namespace
     void InitBiosStub()
     {
         Mem::FillZ(gBios, sizeof(gBios));
+
+        // Vektor exception awal (Reset / Undef / SWI / Prefetch / Data Abort):
+        // Kembali ke LR / loop aman tanpa jatuh ke vektor IRQ (0x00000018) secara tidak sengaja.
+        // MOVS PC, LR (0xE1B0F00E) pada 0x00000004, 0x0000000C, 0x00000010, 0x00000014
+        WriteBiosWord(0x0004u, 0xE1B0F00Eu);
+        WriteBiosWord(0x000Cu, 0xE1B0F00Eu);
+        WriteBiosWord(0x0010u, 0xE1B0F00Eu);
+        WriteBiosWord(0x0014u, 0xE1B0F00Eu);
 
         // Vektor IRQ hardware di 0x00000018: B 0x00000128
         WriteBiosWord(0x0018u, 0xEA000042u);
@@ -483,6 +674,7 @@ namespace
         SetDefaultKeyInput();
         ResetFlashState();
         ResetDma();
+        ResetTimers();
     }
 
     TUint8 ReadArray(
@@ -976,10 +1168,24 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
     aAddress &= ~1u;
 
     if (aAddress >= KIoBase &&
-        aAddress < KIoBase + KIoSize &&
-        IsPpuReadableRegister(aAddress))
+        aAddress < KIoBase + KIoSize)
     {
-        return NgbaPpuReadIo16(aAddress);
+        if (IsPpuReadableRegister(aAddress))
+            return NgbaPpuReadIo16(aAddress);
+
+        if (aAddress >= 0x04000100u && aAddress < 0x04000110u)
+        {
+            const TUint32 rel = aAddress - 0x04000100u;
+            const TInt idx = static_cast<TInt>(rel / 4u);
+            const TUint32 regOff = rel % 4u;
+            if (idx >= 0 && idx < 4)
+            {
+                if (regOff == 0u)
+                    return gTimers[idx].counter;
+                if (regOff == 2u)
+                    return gTimers[idx].control;
+            }
+        }
     }
 
     const TUint16 b0 = ReadMemoryByte(aAddress);
@@ -1053,6 +1259,10 @@ void NgbaMemoryWrite16(
             NgbaPpuWriteIo16(aAddress, aValue);
         else if (IsDmaIoAddress(aAddress))
             WriteDmaIo16(aAddress, aValue);
+        else if (aAddress >= 0x04000100u && aAddress < 0x04000110u)
+            WriteTimerIo16(aAddress, aValue);
+        else if (aAddress >= 0x04000120u && aAddress <= 0x0400012Au)
+            HandleSerialWrite16(aAddress, aValue);
 
         return;
     }
