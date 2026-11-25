@@ -1,4 +1,3 @@
-
 #include "arm7tdmi.h"
 #include "gba_memory.h"
 
@@ -176,11 +175,6 @@ namespace
         return RotateRight(value, amount);
     }
 
-    // Perhitungan flag aritmetika ARM.
-    // carryIn:
-    // ADD/ADC  = carry tambahan.
-    // SUB/SBC  = borrow.
-    // RSC      = borrow.
     void SetArithmeticFlags(
         TNgbaCpuState& cpu,
         TUint32 left,
@@ -285,6 +279,7 @@ namespace
         if (instruction & (1u << 4))
         {
             const TInt rs = (instruction >> 8) & 15;
+
             const TInt amount = static_cast<TInt>(
                 ReadRegister(cpu, rs, address) & 0xFFu
             );
@@ -641,16 +636,13 @@ namespace
     {
         const TUint32 condition = instruction >> 28;
 
-        // Kondisi 0xF bukan kondisi biasa pada ARM7TDMI.
-        // Jangan dilewati diam-diam karena dapat menyembunyikan
-        // kesalahan mode atau instruksi yang belum didukung.
         if (condition == 0xFu)
             return ENgbaCpuUnsupported;
 
         if (!ConditionPassed(cpu.cpsr, condition))
             return ENgbaCpuOk;
 
-        // BX: perpindahan ARM / Thumb.
+        // BX: ARM7TDMI interworking instruction.
         if ((instruction & 0x0FFFFFF0u) == 0x012FFF10u)
         {
             const TUint32 target =
@@ -667,7 +659,7 @@ namespace
             return ENgbaCpuOk;
         }
 
-        // BIOS SWI - ARM mode.
+        // SWI.
         if ((instruction & 0x0F000000u) == 0x0F000000u)
         {
             const TUint32 swiNumber =
@@ -688,6 +680,24 @@ namespace
                 return ENgbaCpuUnsupported;
             }
         }
+
+        // Tolak encoding khusus yang belum didukung.
+        // Jangan biarkan MRS/MSR, SWP atau multiply panjang
+        // masuk ke decoder Data Processing biasa.
+        if ((instruction & 0x0FBF0FFFu) == 0x010F0000u ||
+            (instruction & 0x0FB0FFF0u) == 0x0120F000u ||
+            (instruction & 0x0FB0F000u) == 0x0320F000u)
+        {
+            return ENgbaCpuUnsupported;
+        }
+
+        // SWP / SWPB belum didukung.
+        if ((instruction & 0x0FB00FF0u) == 0x01000090u)
+            return ENgbaCpuUnsupported;
+
+        // Long multiply belum didukung.
+        if ((instruction & 0x0F8000F0u) == 0x00800090u)
+            return ENgbaCpuUnsupported;
 
         // Multiply / Multiply Accumulate.
         if ((instruction & 0x0FC000F0u) == 0x00000090u)
@@ -838,6 +848,12 @@ namespace
 
             const TInt rn = (instruction >> 16) & 15;
             const TInt rd = (instruction >> 12) & 15;
+
+            // Instruksi yang menulis PC sekaligus meminta flag
+            // membutuhkan SPSR untuk exception return.
+            // Struktur CPU saat ini belum memiliki SPSR.
+            if (rd == 15 && setFlags)
+                return ENgbaCpuUnsupported;
 
             const TUint32 left = ReadRegister(cpu, rn, address);
 
@@ -1264,9 +1280,9 @@ namespace
             const TInt rd = (instruction >> 8) & 7;
             const TUint32 offset = (instruction & 0xFFu) * 4u;
             const TUint32 base = (address + 4u) & ~3u;
-            const TUint32 memoryAddress = base + offset;
 
-            cpu.r[rd] = NgbaMemoryRead32(memoryAddress);
+            cpu.r[rd] =
+                NgbaMemoryRead32(base + offset);
 
             return ENgbaCpuOk;
         }
@@ -1558,9 +1574,14 @@ namespace
             return ENgbaCpuOk;
         }
 
-        // BX: perpindahan ARM / Thumb.
+        // BX register.
+        // Bit 7 harus nol pada BX ARMv4T.
+        // Encoding BLX register tidak didukung ARM7TDMI.
         if ((instruction & 0xFF87u) == 0x4700u)
         {
+            if (instruction & 0x0080u)
+                return ENgbaCpuUnsupported;
+
             const TInt rm = (instruction >> 3) & 15;
             const TUint32 target = ReadRegister(cpu, rm, address);
 
@@ -1609,8 +1630,6 @@ namespace
             {
                 if (rd == 15)
                 {
-                    // Thumb ADD PC, Rm:
-                    // PC harus disejajarkan ke batas 4 byte.
                     const TUint32 pcValue =
                         (address + 4u) & ~3u;
 
@@ -1678,7 +1697,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     cpu.lastOpcode = 0;
     cpu.lastInstructionSize = 0;
 
-    // THUMB MODE: instruksi 16-bit.
+    // THUMB MODE.
     if (previousThumb)
     {
         if (address & 1u)
@@ -1709,7 +1728,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
         return result;
     }
 
-    // ARM MODE: instruksi 32-bit.
+    // ARM MODE.
     if (address & 3u)
         return ENgbaCpuBadArgument;
 
