@@ -11,8 +11,40 @@ namespace
     TInt gRomSize = 0;
     TBuf8<4> gGameCode;
 
+    TNgbaGameConfig gGameConfig;
+
     const TInt KMinimumRomSize = 0xC0;
     const TInt KMaximumRomSize = 32 * 1024 * 1024;
+
+    _LIT(KGameConfigPath, "E:\\GBA\\game_config.ini");
+
+    void ResetGameConfig(TNgbaGameConfig& aConfig)
+    {
+        aConfig.gameCode.Zero();
+        aConfig.venderCode.Zero();
+        aConfig.idleLoopTarget = 0;
+        aConfig.flashRomSize = 0;
+        aConfig.hasIdleLoopTarget = EFalse;
+        aConfig.found = EFalse;
+    }
+
+    void TrimText(TPtrC8& aText)
+    {
+        while (aText.Length() > 0 &&
+               (aText[0] == ' ' ||
+                aText[0] == '\t'))
+        {
+            aText.Set(aText.Mid(1));
+        }
+
+        while (aText.Length() > 0 &&
+               (aText[aText.Length() - 1] == ' ' ||
+                aText[aText.Length() - 1] == '\t' ||
+                aText[aText.Length() - 1] == '\r'))
+        {
+            aText.Set(aText.Left(aText.Length() - 1));
+        }
+    }
 
     TBool IsValidGameCode(const TUint8* aCode)
     {
@@ -35,6 +67,175 @@ namespace
 
         return ETrue;
     }
+
+    TBool ParseHex(
+        const TDesC8& aText,
+        TUint32& aValue
+    )
+    {
+        TInt start = 0;
+
+        if (aText.Length() >= 2 &&
+            aText[0] == '0' &&
+            (aText[1] == 'x' || aText[1] == 'X'))
+        {
+            start = 2;
+        }
+
+        if (aText.Length() <= start ||
+            aText.Length() - start > 8)
+        {
+            return EFalse;
+        }
+
+        TUint32 value = 0;
+
+        for (TInt i = start; i < aText.Length(); ++i)
+        {
+            const TUint8 c = aText[i];
+
+            TUint32 digit = 0;
+
+            if (c >= '0' && c <= '9')
+                digit = c - '0';
+            else if (c >= 'A' && c <= 'F')
+                digit = c - 'A' + 10;
+            else if (c >= 'a' && c <= 'f')
+                digit = c - 'a' + 10;
+            else
+                return EFalse;
+
+            value = (value << 4) | digit;
+        }
+
+        aValue = value;
+        return ETrue;
+    }
+
+    void LoadGameConfig()
+    {
+        ResetGameConfig(gGameConfig);
+
+        RFs fs;
+
+        if (fs.Connect() != KErrNone)
+            return;
+
+        RFile file;
+
+        TInt error = file.Open(
+            fs,
+            KGameConfigPath,
+            EFileRead | EFileShareReadersOnly
+        );
+
+        if (error != KErrNone)
+        {
+            fs.Close();
+            return;
+        }
+
+        TBuf8<4096> data;
+
+        error = file.Read(data);
+
+        file.Close();
+        fs.Close();
+
+        if (error != KErrNone || data.Length() == 0)
+            return;
+
+        TBool sectionMatches = EFalse;
+
+        TInt position = 0;
+
+        while (position < data.Length())
+        {
+            TInt end = position;
+
+            while (end < data.Length() &&
+                   data[end] != '\n')
+            {
+                ++end;
+            }
+
+            TPtrC8 line(
+                data.Ptr() + position,
+                end - position
+            );
+
+            TrimText(line);
+
+            position = end + 1;
+
+            if (line.Length() == 0)
+                continue;
+
+            if (line[0] == '#' || line[0] == ';')
+                continue;
+
+            if (line[0] == '[')
+            {
+                sectionMatches = EFalse;
+                continue;
+            }
+
+            const TInt equalPosition = line.Locate('=');
+
+            if (equalPosition == KErrNotFound)
+                continue;
+
+            TPtrC8 key = line.Left(equalPosition);
+            TPtrC8 value = line.Mid(equalPosition + 1);
+
+            TrimText(key);
+            TrimText(value);
+
+            if (key.Compare(_L8("game_code")) == 0)
+            {
+                sectionMatches = EFalse;
+
+                if (value.Length() == 4 &&
+                    value.Compare(gGameCode) == 0)
+                {
+                    sectionMatches = ETrue;
+                    gGameConfig.found = ETrue;
+                    gGameConfig.gameCode.Copy(value);
+                }
+
+                continue;
+            }
+
+            if (!sectionMatches)
+                continue;
+
+            if (key.Compare(_L8("vender_code")) == 0)
+            {
+                if (value.Length() <= 2)
+                    gGameConfig.venderCode.Copy(value);
+            }
+            else if (key.Compare(
+                _L8("idle_loop_eliminate_target")) == 0)
+            {
+                TUint32 address = 0;
+
+                if (ParseHex(value, address))
+                {
+                    gGameConfig.idleLoopTarget = address;
+                    gGameConfig.hasIdleLoopTarget = ETrue;
+                }
+            }
+            else if (key.Compare(_L8("flash_rom_type")) == 0)
+            {
+                if (value.Compare(_L8("128KB")) == 0)
+                    gGameConfig.flashRomSize = 128 * 1024;
+                else if (value.Compare(_L8("64KB")) == 0)
+                    gGameConfig.flashRomSize = 64 * 1024;
+                else if (value.Compare(_L8("32KB")) == 0)
+                    gGameConfig.flashRomSize = 32 * 1024;
+            }
+        }
+    }
 }
 
 void NgbaReleaseRom()
@@ -43,6 +244,8 @@ void NgbaReleaseRom()
 
     gRomSize = 0;
     gGameCode.Zero();
+
+    ResetGameConfig(gGameConfig);
 }
 
 TInt NgbaLoadRom(
@@ -153,7 +356,15 @@ TInt NgbaLoadRom(
     aRomSize = static_cast<TUint32>(gRomSize);
     aGameCode.Copy(gGameCode);
 
+    // Baca konfigurasi khusus game.
+    LoadGameConfig();
+
     return KErrNone;
+}
+
+void NgbaGetGameConfig(TNgbaGameConfig& aConfig)
+{
+    aConfig = gGameConfig;
 }
 
 const TUint8* NgbaRomData()
