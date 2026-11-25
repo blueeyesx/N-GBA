@@ -799,7 +799,7 @@ TInt CreateGbaBitmap(CFbsBitmap& bitmap)
 {
     return bitmap.Create(
         TSize(KGbaScreenWidth, KGbaScreenHeight),
-        EColor64K
+        EColor16MU
     );
 }
 
@@ -807,15 +807,16 @@ void UpdateGbaBitmap(CFbsBitmap& bitmap)
 {
     if (bitmap.Handle() == 0) return;
 
-    bitmap.LockHeap();
+    bitmap.BeginDataAccess();
 
-    TUint16* pixels =
-        reinterpret_cast<TUint16*>(bitmap.DataAddress());
+    TUint32* pixels =
+        reinterpret_cast<TUint32*>(bitmap.DataAddress());
+
     if (pixels != NULL) {
-        NgbaPpuConvertToRgb565(pixels);
+        NgbaPpuConvertToXrgb8888(pixels);
     }
 
-    bitmap.UnlockHeap();
+    bitmap.EndDataAccess();
 }
 
 void DrawGbaFrame(
@@ -1513,36 +1514,87 @@ TInt RunWindowServer()
                                             event.Type() == EEventKeyDown ||
                                             event.Type() == EEventPointer
                                         ) {
-                                            TUint key = 0;
+                                            // Saat game GBA sedang berjalan, abaikan input menu
+                                            // kecuali tombol keluar/kembali (Backspace / Escape).
+                                            if (cpuActive && page == ERomPage) {
+                                                TUint gameKey = 0;
 
-                                            if (event.Type() == EEventPointer) {
-                                                const TPointerEvent* pointer =
-                                                    event.Pointer();
+                                                if (event.Type() != EEventPointer) {
+                                                    gameKey = event.Key()->iCode;
+                                                }
 
                                                 if (
-                                                    pointer != NULL &&
-                                                    pointer->iType ==
-                                                    TPointerEvent::EButton1Down
+                                                    gameKey == EKeyBackspace ||
+                                                    gameKey == EKeyEscape
                                                 ) {
-                                                    const TInt rowHeight =
-                                                        MenuRowHeight(size, fontMode);
+                                                    StopCpuTimer(
+                                                        cpuTimer,
+                                                        cpuTimerStatus,
+                                                        cpuTimerPending
+                                                    );
 
-                                                    const TInt y =
-                                                        pointer->iPosition.iY;
+                                                    cpuActive = EFalse;
+                                                    LogMessage(
+                                                        _L("CPU EXECUTION PAUSED")
+                                                    );
+                                                    window.Invalidate();
+                                                }
+                                            }
+                                            else {
+                                                TUint key = 0;
 
-                                                    if (page == ELogPage) {
-                                                        const TInt firstButtonY =
-                                                            size.iHeight -
-                                                            rowHeight * 2 - 3;
+                                                if (event.Type() == EEventPointer) {
+                                                    const TPointerEvent* pointer =
+                                                        event.Pointer();
 
-                                                        if (y >= firstButtonY) {
+                                                    if (
+                                                        pointer != NULL &&
+                                                        pointer->iType ==
+                                                        TPointerEvent::EButton1Down
+                                                    ) {
+                                                        const TInt rowHeight =
+                                                            MenuRowHeight(size, fontMode);
+
+                                                        const TInt y =
+                                                            pointer->iPosition.iY;
+
+                                                        if (page == ELogPage) {
+                                                            const TInt firstButtonY =
+                                                                size.iHeight -
+                                                                rowHeight * 2 - 3;
+
+                                                            if (y >= firstButtonY) {
+                                                                const TInt row =
+                                                                    (y - firstButtonY) /
+                                                                    rowHeight;
+
+                                                                if (
+                                                                    row >= 0 &&
+                                                                    row < KLogMenuCount
+                                                                ) {
+                                                                    if (row == lastTappedRow) {
+                                                                        key = EKeyEnter;
+                                                                        lastTappedRow = -1;
+                                                                    }
+                                                                    else {
+                                                                        selected = row;
+                                                                        lastTappedRow = row;
+                                                                        window.Invalidate();
+                                                                    }
+                                                                }
+                                                            }
+                                                            else {
+                                                                lastTappedRow = -1;
+                                                            }
+                                                        }
+                                                        else if (y >= KMenuTop) {
                                                             const TInt row =
-                                                                (y - firstButtonY) /
+                                                                (y - KMenuTop) /
                                                                 rowHeight;
 
                                                             if (
                                                                 row >= 0 &&
-                                                                row < KLogMenuCount
+                                                                row < MenuCount(page, romCount)
                                                             ) {
                                                                 if (row == lastTappedRow) {
                                                                     key = EKeyEnter;
@@ -1554,184 +1606,147 @@ TInt RunWindowServer()
                                                                     window.Invalidate();
                                                                 }
                                                             }
-                                                        }
-                                                        else {
-                                                            lastTappedRow = -1;
-                                                        }
-                                                    }
-                                                    else if (y >= KMenuTop) {
-                                                        const TInt row =
-                                                            (y - KMenuTop) /
-                                                            rowHeight;
-
-                                                        if (
-                                                            row >= 0 &&
-                                                            row < MenuCount(page, romCount)
-                                                        ) {
-                                                            if (row == lastTappedRow) {
-                                                                key = EKeyEnter;
+                                                            else {
                                                                 lastTappedRow = -1;
                                                             }
-                                                            else {
-                                                                selected = row;
-                                                                lastTappedRow = row;
-                                                                window.Invalidate();
-                                                            }
                                                         }
                                                         else {
                                                             lastTappedRow = -1;
                                                         }
                                                     }
-                                                    else {
-                                                        lastTappedRow = -1;
-                                                    }
                                                 }
-                                            }
-                                            else {
-                                                key = event.Key()->iCode;
-                                                lastTappedRow = -1;
-                                            }
+                                                else {
+                                                    key = event.Key()->iCode;
+                                                    lastTappedRow = -1;
+                                                }
 
-                                            if (key == EKeyUpArrow) {
-                                                selected =
-                                                    (selected +
-                                                     MenuCount(page, romCount) - 1) %
-                                                    MenuCount(page, romCount);
+                                                if (key == EKeyUpArrow) {
+                                                    selected =
+                                                        (selected +
+                                                         MenuCount(page, romCount) - 1) %
+                                                        MenuCount(page, romCount);
 
-                                                window.Invalidate();
-                                            }
-                                            else if (key == EKeyDownArrow) {
-                                                selected =
-                                                    (selected + 1) %
-                                                    MenuCount(page, romCount);
+                                                    window.Invalidate();
+                                                }
+                                                else if (key == EKeyDownArrow) {
+                                                    selected =
+                                                        (selected + 1) %
+                                                        MenuCount(page, romCount);
 
-                                                window.Invalidate();
-                                            }
-                                            else if (
-                                                key == EKeyEnter ||
-                                                key == EKeyDevice3
-                                            ) {
-                                                const TInt oldPage = page;
-                                                const TInt oldFontMode = fontMode;
-
-                                                ActivateSelected(
-                                                    page,
-                                                    selected,
-                                                    languageMode,
-                                                    fontMode,
-                                                    indonesian,
-                                                    running,
-                                                    message,
-                                                    romNames,
-                                                    romCount,
-                                                    cpu,
-                                                    cpuActive,
-                                                    cpuTimer,
-                                                    cpuTimerStatus,
-                                                    cpuTimerPending,
-                                                    timerReady,
-                                                    framebufferReady,
-                                                    diagnostic,
-                                                    previousAddress,
-                                                    previousOpcode,
-                                                    hasPreviousInstruction
-                                                );
-
-                                                if (
-                                                    oldPage == ERomPage &&
-                                                    page == ERomPage &&
-                                                    cpuActive
+                                                    window.Invalidate();
+                                                }
+                                                else if (
+                                                    key == EKeyEnter ||
+                                                    key == EKeyDevice3
                                                 ) {
-                                                    diagnostic[0] = '\0';
-                                                }
+                                                    const TInt oldPage = page;
+                                                    const TInt oldFontMode = fontMode;
 
-                                                if (
-                                                    page == ERomPage &&
-                                                    oldPage != ERomPage
-                                                ) {
-                                                    const TInt scanResult =
-                                                        LoadRomList(romNames);
-
-                                                    if (scanResult >= 0) {
-                                                        romCount = scanResult;
-
-                                                        TBuf<64> scanLog;
-                                                        scanLog.Copy(
-                                                            _L("ROM SCAN COMPLETE: ")
-                                                        );
-                                                        scanLog.AppendNum(romCount);
-                                                        LogMessage(scanLog);
-
-                                                        if (romCount == 0) {
-                                                            message = indonesian
-                                                                ? "ROM GBA TIDAK DITEMUKAN"
-                                                                : "NO GBA ROM FOUND";
-                                                        }
-                                                        else {
-                                                            message = indonesian
-                                                                ? "PILIH FILE ROM"
-                                                                : "SELECT A ROM FILE";
-                                                        }
-                                                    }
-                                                    else {
-                                                        romCount = 0;
-                                                        LogMessage(
-                                                            _L("ROM FOLDER NOT FOUND")
-                                                        );
-
-                                                        message = indonesian
-                                                            ? "BUAT FOLDER E:\\GBA"
-                                                            : "CREATE FOLDER E:\\GBA";
-                                                    }
-                                                }
-
-                                                if (fontMode != oldFontMode) {
-                                                    CFont* newFont = NULL;
-
-                                                    const TInt fontError =
-                                                        AcquireFont(
-                                                            screen,
-                                                            fontMode,
-                                                            newFont
-                                                        );
-
-                                                    if (fontError == KErrNone) {
-                                                        screen.ReleaseFont(font);
-                                                        font = newFont;
-                                                    }
-                                                    else {
-                                                        LogMessage(
-                                                            _L("FONT LOAD FAILED")
-                                                        );
-
-                                                        message = indonesian
-                                                            ? "GAGAL MEMUAT FONT"
-                                                            : "FONT LOAD FAILED";
-                                                    }
-                                                }
-
-                                                window.Invalidate();
-                                            }
-                                            else if (
-                                                key == EKeyBackspace ||
-                                                key == EKeyEscape
-                                            ) {
-                                                GoBack(page, selected, running);
-
-                                                if (page != ERomPage && cpuActive) {
-                                                    StopCpuTimer(
+                                                    ActivateSelected(
+                                                        page,
+                                                        selected,
+                                                        languageMode,
+                                                        fontMode,
+                                                        indonesian,
+                                                        running,
+                                                        message,
+                                                        romNames,
+                                                        romCount,
+                                                        cpu,
+                                                        cpuActive,
                                                         cpuTimer,
                                                         cpuTimerStatus,
-                                                        cpuTimerPending
+                                                        cpuTimerPending,
+                                                        timerReady,
+                                                        framebufferReady,
+                                                        diagnostic,
+                                                        previousAddress,
+                                                        previousOpcode,
+                                                        hasPreviousInstruction
                                                     );
 
-                                                    cpuActive = EFalse;
-                                                    LogMessage(
-                                                        _L("CPU EXECUTION PAUSED")
-                                                    );
+                                                    if (
+                                                        oldPage == ERomPage &&
+                                                        page == ERomPage &&
+                                                        cpuActive
+                                                    ) {
+                                                        diagnostic[0] = '\0';
+                                                    }
+
+                                                    if (
+                                                        page == ERomPage &&
+                                                        oldPage != ERomPage
+                                                    ) {
+                                                        const TInt scanResult =
+                                                            LoadRomList(romNames);
+
+                                                        if (scanResult >= 0) {
+                                                            romCount = scanResult;
+
+                                                            TBuf<64> scanLog;
+                                                            scanLog.Copy(
+                                                                _L("ROM SCAN COMPLETE: ")
+                                                            );
+                                                            scanLog.AppendNum(romCount);
+                                                            LogMessage(scanLog);
+
+                                                            if (romCount == 0) {
+                                                                message = indonesian
+                                                                    ? "ROM GBA TIDAK DITEMUKAN"
+                                                                    : "NO GBA ROM FOUND";
+                                                            }
+                                                            else {
+                                                                message = indonesian
+                                                                    ? "PILIH FILE ROM"
+                                                                    : "SELECT A ROM FILE";
+                                                            }
+                                                        }
+                                                        else {
+                                                            romCount = 0;
+                                                            LogMessage(
+                                                                _L("ROM FOLDER NOT FOUND")
+                                                            );
+
+                                                            message = indonesian
+                                                                ? "BUAT FOLDER E:\\GBA"
+                                                                : "CREATE FOLDER E:\\GBA";
+                                                        }
+                                                    }
+
+                                                    if (fontMode != oldFontMode) {
+                                                        CFont* newFont = NULL;
+
+                                                        const TInt fontError =
+                                                            AcquireFont(
+                                                                screen,
+                                                                fontMode,
+                                                                newFont
+                                                            );
+
+                                                        if (fontError == KErrNone) {
+                                                            screen.ReleaseFont(font);
+                                                            font = newFont;
+                                                        }
+                                                        else {
+                                                            LogMessage(
+                                                                _L("FONT LOAD FAILED")
+                                                            );
+
+                                                            message = indonesian
+                                                                ? "GAGAL MEMUAT FONT"
+                                                                : "FONT LOAD FAILED";
+                                                        }
+                                                    }
+
+                                                    window.Invalidate();
                                                 }
-
-                                                window.Invalidate();
+                                                else if (
+                                                    key == EKeyBackspace ||
+                                                    key == EKeyEscape
+                                                ) {
+                                                    GoBack(page, selected, running);
+                                                    window.Invalidate();
+                                                }
                                             }
                                         }
 
@@ -1764,24 +1779,12 @@ TInt RunWindowServer()
                                             cpuActive &&
                                             page == ERomPage
                                         ) {
-                                            // PPU menjalankan CPU melalui
-                                            // RunCpuCycles() miliknya.
                                             NgbaPpuRunFrame(cpu);
-
                                             UpdateGbaBitmap(gbaBitmap);
 
+                                            // Picu redraw; timer frame berikutnya dijadwalkan
+                                            // setelah DrawGbaFrame selesai agar layar tidak tertahan.
                                             window.Invalidate();
-
-                                            if (cpuActive) {
-                                                cpuTimer.After(
-                                                    cpuTimerStatus,
-                                                    TTimeIntervalMicroSeconds32(
-                                                        KGbaFrameTimerInterval
-                                                    )
-                                                );
-
-                                                cpuTimerPending = ETrue;
-                                            }
                                         }
                                     }
 
@@ -1812,6 +1815,16 @@ TInt RunWindowServer()
                                                     size,
                                                     gbaBitmap
                                                 );
+
+                                                if (!cpuTimerPending && timerReady) {
+                                                    cpuTimer.After(
+                                                        cpuTimerStatus,
+                                                        TTimeIntervalMicroSeconds32(
+                                                            KGbaFrameTimerInterval
+                                                        )
+                                                    );
+                                                    cpuTimerPending = ETrue;
+                                                }
                                             }
                                             else {
                                                 DrawMenu(

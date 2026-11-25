@@ -1452,6 +1452,10 @@ namespace
         case 0x0Cu:
             return ExecuteBiosCpuFastSet(cpu);
 
+        case 0x0Du:
+            cpu.r[0] = 0xBAAE187Fu;
+            return ENgbaCpuOk;
+
         case 0x0Eu:
             return ExecuteBiosBgAffineSet(cpu);
 
@@ -1490,6 +1494,18 @@ namespace
 
         case 0x1Fu:
             return ExecuteBiosMidiKey2Freq(cpu);
+
+        case 0x1Au:
+        case 0x1Bu:
+        case 0x1Cu:
+        case 0x1Du:
+        case 0x1Eu:
+        case 0x20u:
+        case 0x21u:
+        case 0x28u:
+        case 0x29u:
+        case 0x2Au:
+            return ENgbaCpuOk;
 
         default:
             return ENgbaCpuUnsupported;
@@ -2396,7 +2412,6 @@ namespace
 
             case 3:
                 result = old - value;
-                cpu.r[rd] = result;
                 SetArithmeticFlags(cpu, old, value, result, ETrue);
                 break;
             }
