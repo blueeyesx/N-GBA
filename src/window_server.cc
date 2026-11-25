@@ -546,3 +546,626 @@ void AppendDiagnosticByte(
         output[position++] = hex[i];
     }
 }
+
+void FormatCpuDiagnostic(
+    const TNgbaCpuState& cpu,
+    TUint32 previousAddress,
+    TUint32 previousOpcode,
+    TBool hasPreviousInstruction,
+    char* output
+)
+{
+    TInt position = 0;
+
+    AppendDiagnosticText(output, position, "PC:");
+    AppendDiagnosticHex(output, position, cpu.lastAddress);
+
+    AppendDiagnosticText(output, position, " OP:");
+    AppendDiagnosticHex(output, position, cpu.lastOpcode);
+
+    AppendDiagnosticText(
+        output,
+        position,
+        cpu.lastInstructionSize == 2 ? " THUMB" : " ARM"
+    );
+
+    AppendDiagnosticText(
+        output,
+        position,
+        (cpu.cpsr & 0x20u) ? " T:1\n" : " T:0\n"
+    );
+
+    // Byte ROM pada alamat instruksi.
+    AppendDiagnosticText(output, position, "BYTE:");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 1)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 2)
+    );
+
+    AppendDiagnosticText(output, position, " ");
+
+    AppendDiagnosticByte(
+        output,
+        position,
+        NgbaMemoryRead8(cpu.lastAddress + 3)
+    );
+
+    output[position++] = '\n';
+
+    // Instruksi sebelumnya.
+    AppendDiagnosticText(output, position, "PREV:");
+
+    if (hasPreviousInstruction) {
+        AppendDiagnosticHex(
+            output,
+            position,
+            previousAddress
+        );
+
+        AppendDiagnosticText(output, position, " OP:");
+
+        AppendDiagnosticHex(
+            output,
+            position,
+            previousOpcode
+        );
+    }
+    else {
+        AppendDiagnosticText(output, position, "NONE");
+    }
+
+    output[position++] = '\n';
+
+    // Register.
+    AppendDiagnosticText(output, position, "R0:");
+    AppendDiagnosticHex(output, position, cpu.r[0]);
+
+    AppendDiagnosticText(output, position, " R1:");
+    AppendDiagnosticHex(output, position, cpu.r[1]);
+
+    output[position++] = '\n';
+
+    AppendDiagnosticText(output, position, "R2:");
+    AppendDiagnosticHex(output, position, cpu.r[2]);
+
+    AppendDiagnosticText(output, position, " R3:");
+    AppendDiagnosticHex(output, position, cpu.r[3]);
+
+    output[position++] = '\n';
+
+    // CPSR.
+    AppendDiagnosticText(output, position, "CPSR:");
+    AppendDiagnosticHex(output, position, cpu.cpsr);
+
+    output[position] = '\0';
+}
+
+// --------------------------------------------------
+// TIMER CPU
+// --------------------------------------------------
+
+void StopCpuTimer(
+    RTimer& timer,
+    TRequestStatus& status,
+    TBool& pending
+)
+{
+    if (pending) {
+        timer.Cancel();
+        User::WaitForRequest(status);
+        pending = EFalse;
+    }
+}
+
+// --------------------------------------------------
+// JUMLAH ITEM
+// --------------------------------------------------
+
+TInt MenuCount(TInt page, TInt romCount)
+{
+    if (page == ESettingsPage) return KSettingsMenuCount;
+    if (page == ELanguagePage) return KLanguageMenuCount;
+    if (page == EFontPage) return KFontMenuCount;
+    if (page == ELogPage) return KLogMenuCount;
+
+    if (page == ERomPage) {
+        return romCount > 0 ? romCount + 1 : 1;
+    }
+
+    return KMainMenuCount;
+}
+
+// --------------------------------------------------
+// TEKS MENU
+// --------------------------------------------------
+
+const char* MenuText(
+    TInt page,
+    TInt index,
+    TBool indonesian
+)
+{
+    if (page == EMainPage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "PUSTAKA GAME",
+                "MUAT ROM",
+                "LANJUTKAN",
+                "SAVE STATE",
+                "PENGATURAN",
+                "TENTANG N-GBA",
+                "LOG",
+                "KELUAR"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "GAME LIBRARY",
+            "LOAD ROM",
+            "RESUME GAME",
+            "SAVE STATES",
+            "SETTINGS",
+            "ABOUT N-GBA",
+            "LOG",
+            "EXIT"
+        };
+        return menu[index];
+    }
+
+    if (page == ESettingsPage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "BAHASA",
+                "UKURAN FONT",
+                "KEMBALI"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "LANGUAGE",
+            "FONT SIZE",
+            "BACK"
+        };
+        return menu[index];
+    }
+
+    if (page == ELanguagePage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "OTOMATIS (SISTEM HP)",
+                "BAHASA INDONESIA",
+                "ENGLISH",
+                "KEMBALI"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "AUTO (SYSTEM)",
+            "BAHASA INDONESIA",
+            "ENGLISH",
+            "BACK"
+        };
+        return menu[index];
+    }
+
+    if (page == EFontPage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "KECIL",
+                "SEDANG",
+                "BESAR",
+                "KEMBALI"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "SMALL",
+            "MEDIUM",
+            "LARGE",
+            "BACK"
+        };
+        return menu[index];
+    }
+
+    if (page == ERomPage) {
+        return indonesian ? "KEMBALI" : "BACK";
+    }
+
+    if (page == ELogPage) {
+        if (indonesian) {
+            static const char* menu[] = {
+                "HAPUS LOG",
+                "KEMBALI"
+            };
+            return menu[index];
+        }
+
+        static const char* menu[] = {
+            "CLEAR LOG",
+            "BACK"
+        };
+        return menu[index];
+    }
+
+    return "";
+}
+
+// --------------------------------------------------
+// GAMBAR
+// --------------------------------------------------
+
+void Fill(
+    CWindowGc& gc,
+    TInt x,
+    TInt y,
+    TInt width,
+    TInt height,
+    TUint color
+)
+{
+    gc.SetPenStyle(CGraphicsContext::ENullPen);
+    gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
+    gc.SetBrushColor(TRgb(color));
+
+    gc.DrawRect(
+        TRect(x, y, x + width, y + height)
+    );
+}
+
+void DrawText(
+    CWindowGc& gc,
+    const char* text,
+    TInt x,
+    TInt y,
+    TUint color
+)
+{
+    TUint16 buffer[96];
+    TInt length = 0;
+
+    while (text[length] != '\0' && length < 96) {
+        buffer[length] = static_cast<TUint8>(text[length]);
+        ++length;
+    }
+
+    gc.SetPenStyle(CGraphicsContext::ESolidPen);
+    gc.SetPenColor(TRgb(color));
+
+    gc.DrawText(
+        TPtrC16(buffer, length),
+        TPoint(x, y)
+    );
+}
+
+void DrawRomText(
+    CWindowGc& gc,
+    const TDesC& text,
+    TInt x,
+    TInt y,
+    TUint color
+)
+{
+    gc.SetPenStyle(CGraphicsContext::ESolidPen);
+    gc.SetPenColor(TRgb(color));
+    gc.DrawText(text, TPoint(x, y));
+}
+
+// --------------------------------------------------
+// GAMBAR DIAGNOSTIK CPU
+// --------------------------------------------------
+
+void DrawCpuDiagnostic(
+    CWindowGc& gc,
+    const char* diagnostic,
+    TInt x,
+    TInt y
+)
+{
+    if (diagnostic == NULL || diagnostic[0] == '\0') {
+        return;
+    }
+
+    char line[96];
+    TInt lineLength = 0;
+    TInt lineNumber = 0;
+
+    const TInt lineHeight = 15;
+    const TInt maxLines = 7;
+
+    while (
+        *diagnostic != '\0' &&
+        lineNumber < maxLines
+    ) {
+        if (*diagnostic == '\n') {
+            line[lineLength] = '\0';
+
+            DrawText(
+                gc,
+                line,
+                x,
+                y + lineNumber * lineHeight,
+                KWhite
+            );
+
+            ++lineNumber;
+            lineLength = 0;
+        }
+        else if (lineLength < 95) {
+            line[lineLength++] = *diagnostic;
+        }
+
+        ++diagnostic;
+    }
+
+    if (lineLength > 0 && lineNumber < maxLines) {
+        line[lineLength] = '\0';
+
+        DrawText(
+            gc,
+            line,
+            x,
+            y + lineNumber * lineHeight,
+            KWhite
+        );
+    }
+}
+
+// --------------------------------------------------
+// GAMBAR HALAMAN LOG
+// --------------------------------------------------
+
+void DrawLogPage(
+    CWindowGc& gc,
+    const TSize& size,
+    TInt selected,
+    TInt fontMode,
+    TBool indonesian
+)
+{
+    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
+
+    DrawText(gc, "N-GBA / LOG", 12, 30, KWhite);
+    DrawText(
+        gc,
+        "LOG: GBA\\Logs\\ngba.log",
+        12,
+        51,
+        KBlue
+    );
+
+    TBuf<512> logText;
+    ReadLogFile(logText);
+
+    TInt starts[5];
+    TInt lengths[5];
+
+    TInt lineCount = 0;
+    TInt lineStart = 0;
+
+    for (TInt i = 0; i <= logText.Length(); ++i) {
+        if (i == logText.Length() || logText[i] == '\n') {
+            if (i > lineStart) {
+                if (lineCount < 5) {
+                    starts[lineCount] = lineStart;
+                    lengths[lineCount] = i - lineStart;
+                    ++lineCount;
+                }
+                else {
+                    for (TInt j = 0; j < 4; ++j) {
+                        starts[j] = starts[j + 1];
+                        lengths[j] = lengths[j + 1];
+                    }
+
+                    starts[4] = lineStart;
+                    lengths[4] = i - lineStart;
+                }
+            }
+
+            lineStart = i + 1;
+        }
+    }
+
+    const TInt lineHeight =
+        fontMode == EFontLarge ? 20 :
+        fontMode == EFontMedium ? 17 : 15;
+
+    TInt y = 79;
+
+    if (lineCount == 0) {
+        DrawText(gc, "LOG KOSONG", 12, y, KMuted);
+    }
+    else {
+        for (TInt i = 0; i < lineCount; ++i) {
+            TBuf<100> line;
+
+            TInt length = lengths[i];
+
+            if (length > line.MaxLength()) {
+                length = line.MaxLength();
+            }
+
+            line.Copy(logText.Mid(starts[i], length));
+
+            DrawRomText(
+                gc,
+                line,
+                8,
+                y,
+                KMuted
+            );
+
+            y += lineHeight;
+        }
+    }
+
+    const TInt rowHeight = MenuRowHeight(size, fontMode);
+
+    for (TInt i = 0; i < KLogMenuCount; ++i) {
+        const TInt buttonY =
+            size.iHeight - (2 - i) * rowHeight - 3;
+
+        Fill(
+            gc,
+            8,
+            buttonY,
+            size.iWidth - 16,
+            rowHeight - 2,
+            i == selected ? KBlue : KPanel
+        );
+
+        DrawText(
+            gc,
+            MenuText(ELogPage, i, indonesian),
+            15,
+            buttonY + rowHeight / 2 + 6,
+            i == selected ? KWhite : KMuted
+        );
+    }
+}
+
+// --------------------------------------------------
+// MENGGAMBAR MENU
+// --------------------------------------------------
+
+void DrawMenu(
+    CWindowGc& gc,
+    CFont* font,
+    const TSize& size,
+    TInt page,
+    TInt selected,
+    TInt languageMode,
+    TInt fontMode,
+    const char* message,
+    TBool indonesian,
+    TBuf<KMaxFileName>* romNames,
+    TInt romCount,
+    const char* diagnostic
+)
+{
+    if (page == ELogPage) {
+        gc.UseFont(font);
+
+        DrawLogPage(
+            gc,
+            size,
+            selected,
+            fontMode,
+            indonesian
+        );
+
+        gc.DiscardFont();
+        return;
+    }
+
+    Fill(gc, 0, 0, size.iWidth, size.iHeight, KBackground);
+    Fill(gc, 0, 0, size.iWidth, 4, KBlue);
+
+    gc.UseFont(font);
+
+    DrawText(gc, "N-GBA", 12, 30, KWhite);
+    DrawText(gc, "STELLAR DRAGON", 12, 51, KBlue);
+
+    const TInt count = MenuCount(page, romCount);
+    const TInt rowHeight = MenuRowHeight(size, fontMode);
+    const TInt textOffset = rowHeight / 2 + 6;
+
+    for (TInt i = 0; i < count; ++i) {
+        const TInt y = KMenuTop + i * rowHeight;
+
+        const TUint color =
+            (i == selected) ? KBlue : KPanel;
+
+        Fill(
+            gc,
+            8,
+            y,
+            size.iWidth - 16,
+            rowHeight - 2,
+            color
+        );
+
+        if (page == ERomPage && romCount > 0 && i < romCount) {
+            DrawRomText(
+                gc,
+                romNames[i],
+                15,
+                y + textOffset,
+                (i == selected) ? KWhite : KMuted
+            );
+        }
+        else {
+            const TInt textIndex =
+                page == ERomPage ? 0 : i;
+
+            DrawText(
+                gc,
+                MenuText(page, textIndex, indonesian),
+                15,
+                y + textOffset,
+                (i == selected) ? KWhite : KMuted
+            );
+        }
+
+        if (page == ELanguagePage && i == languageMode) {
+            DrawText(
+                gc,
+                "*",
+                size.iWidth - 18,
+                y + textOffset,
+                KWhite
+            );
+        }
+
+        if (page == EFontPage && i == fontMode) {
+            DrawText(
+                gc,
+                "*",
+                size.iWidth - 18,
+                y + textOffset,
+                KWhite
+            );
+        }
+    }
+
+    if (diagnostic != NULL && diagnostic[0] != '\0') {
+        DrawCpuDiagnostic(
+            gc,
+            diagnostic,
+            8,
+            size.iHeight - 112
+        );
+    }
+
+    DrawText(
+        gc,
+        message,
+        8,
+        size.iHeight - 12,
+        KBlue
+    );
+
+    gc.DiscardFont();
+}
