@@ -2412,6 +2412,7 @@ namespace
 
             case 3:
                 result = old - value;
+                cpu.r[rd] = result;
                 SetArithmeticFlags(cpu, old, value, result, ETrue);
                 break;
             }

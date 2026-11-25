@@ -527,7 +527,8 @@ namespace
         if (gRomSize <= 0)
             return 0;
 
-        const TUint32 offset = aAddress - KRomBase;
+        // Cerminan ROM pada 0x08000000, 0x0A000000, dan 0x0C000000 (masing-masing 32MB).
+        const TUint32 offset = aAddress & 0x01FFFFFFu;
 
         const TInt romOffset = static_cast<TInt>(
             offset % static_cast<TUint32>(gRomSize)

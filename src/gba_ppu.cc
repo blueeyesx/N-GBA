@@ -84,6 +84,7 @@ namespace
 
     TUint32 gPpuFrameCounter = 0;
     TUint16 gLastLoggedDispCnt = 0xFFFFu;
+    TBool gLoggedCpuError = EFalse;
 
     _LIT(KPpuLogFolder, "E:\\GBA\\");
     _LIT(KPpuLogFile, "E:\\GBA\\ngba.log");
@@ -264,7 +265,21 @@ namespace
             const TInt status = NgbaCpuStep(aCpu);
 
             if (status != ENgbaCpuOk)
+            {
+                if (!gLoggedCpuError)
+                {
+                    gLoggedCpuError = ETrue;
+                    TBuf<128> msg;
+                    msg.Copy(_L("CPU HALT PC=0x"));
+                    msg.AppendNum(static_cast<TInt>(aCpu.lastAddress), EHex);
+                    msg.Append(_L(" OP=0x"));
+                    msg.AppendNum(static_cast<TInt>(aCpu.lastOpcode), EHex);
+                    msg.Append(_L(" CPSR=0x"));
+                    msg.AppendNum(static_cast<TInt>(aCpu.cpsr), EHex);
+                    WritePpuLog(msg);
+                }
                 break;
+            }
         }
     }
 
@@ -1359,6 +1374,7 @@ void NgbaPpuReset()
 {
     gPpuFrameCounter = 0;
     gLastLoggedDispCnt = 0xFFFFu;
+    gLoggedCpuError = EFalse;
 
     gPpu.dispCnt = 0;
     gPpu.greenSwap = 0;
