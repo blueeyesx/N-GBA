@@ -17,7 +17,7 @@ target_link_libraries(
     Symbian::Stackless
     Symbian::WindowServer
     Symbian::Gdi
+    Symbian::Bitmap
     Symbian::BitmapGdi
     Symbian::FontStore
-    "${SYMBIAN_SDK_PREFIX}/proxies/fbscli/fbscli.dso"
 )
