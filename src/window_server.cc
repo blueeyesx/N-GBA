@@ -2051,26 +2051,11 @@ TInt RunWindowServer()
 // APPLICATION ENTRY
 // --------------------------------------------------
 
+// --------------------------------------------------
+// APPLICATION ENTRY
+// --------------------------------------------------
+
 int GuiWindowServerMain()
 {
-    CTrapCleanup* cleanup = CTrapCleanup::New();
-
-    if (cleanup == NULL) {
-        return KErrNoMemory;
-    }
-
-    TInt result = KErrNone;
-
-    TRAPD(
-        trapError,
-        result = RunWindowServer()
-    );
-
-    if (trapError != KErrNone) {
-        result = trapError;
-        LogMessage(_L("APPLICATION LEAVE ERROR"));
-    }
-
-    delete cleanup;
-    return result;
+    return RunWindowServer();
 }
