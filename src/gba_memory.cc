@@ -1,4 +1,6 @@
+
 #include "gba_memory.h"
+#include "gba_ppu.h"
 
 #include <e32std.h>
 #include <f32file.h>
@@ -12,7 +14,6 @@ namespace
     const TInt KVramSize = 0x18000;
     const TInt KOamSize = 0x400;
     const TInt KSramSize = 0x10000;
-
     const TInt KRomCacheSize = 4096;
 
     const TUint32 KEwramBase = 0x02000000u;
@@ -44,6 +45,31 @@ namespace
 
     TInt gRomSize = 0;
     TBool gReady = EFalse;
+
+    TBool IsPpuIoAddress(TUint32 aAddress)
+    {
+        return (
+            aAddress >= 0x04000000u &&
+            aAddress <= 0x04000056u
+        );
+    }
+
+    TBool IsPpuReadableRegister(TUint32 aAddress)
+    {
+        aAddress &= ~1u;
+
+        if (aAddress >= 0x04000000u &&
+            aAddress <= 0x0400000Eu)
+            return ETrue;
+
+        if (aAddress == 0x04000048u ||
+            aAddress == 0x0400004Au ||
+            aAddress == 0x04000050u ||
+            aAddress == 0x04000052u)
+            return ETrue;
+
+        return EFalse;
+    }
 
     void CloseRomFile()
     {
@@ -111,8 +137,7 @@ namespace
         if (gRomSize <= 0)
             return 0;
 
-        const TUint32 offset =
-            aAddress - KRomBase;
+        const TUint32 offset = aAddress - KRomBase;
 
         const TInt romOffset = static_cast<TInt>(
             offset % static_cast<TUint32>(gRomSize)
@@ -128,16 +153,13 @@ namespace
             romOffset >= gRomCacheStart &&
             romOffset < gRomCacheStart + gRomCacheLength)
         {
-            return gRomCache[
-                romOffset - gRomCacheStart
-            ];
+            return gRomCache[romOffset - gRomCacheStart];
         }
 
         const TInt blockStart =
             (romOffset / KRomCacheSize) * KRomCacheSize;
 
-        TInt bytesToRead =
-            gRomSize - blockStart;
+        TInt bytesToRead = gRomSize - blockStart;
 
         if (bytesToRead > KRomCacheSize)
             bytesToRead = KRomCacheSize;
@@ -167,8 +189,7 @@ namespace
         gRomCacheStart = blockStart;
         gRomCacheLength = descriptor.Length();
 
-        const TInt cacheOffset =
-            romOffset - gRomCacheStart;
+        const TInt cacheOffset = romOffset - gRomCacheStart;
 
         if (cacheOffset < 0 ||
             cacheOffset >= gRomCacheLength)
@@ -208,6 +229,18 @@ namespace
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
         {
+            const TUint32 aligned = aAddress & ~1u;
+
+            if (IsPpuReadableRegister(aligned))
+            {
+                const TUint16 value =
+                    NgbaPpuReadIo16(aligned);
+
+                return (aAddress & 1u)
+                    ? static_cast<TUint8>(value >> 8)
+                    : static_cast<TUint8>(value);
+            }
+
             return gIo[aAddress - KIoBase];
         }
 
@@ -294,7 +327,26 @@ namespace
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
         {
-            gIo[aAddress - KIoBase] = aValue;
+            const TUint32 offset = aAddress - KIoBase;
+
+            gIo[offset] = aValue;
+
+            if (IsPpuIoAddress(aAddress))
+            {
+                const TUint32 aligned = aAddress & ~1u;
+                const TUint32 ioOffset = aligned - KIoBase;
+
+                const TUint16 value =
+                    static_cast<TUint16>(
+                        gIo[ioOffset] |
+                        (static_cast<TUint16>(
+                            gIo[ioOffset + 1
+                        ]) << 8)
+                    );
+
+                NgbaPpuWriteIo16(aligned, value);
+            }
+
             return;
         }
 
@@ -361,7 +413,6 @@ TInt NgbaMemoryInit(
         return KErrTooBig;
 
     NgbaMemoryShutdown();
-
     ClearMemory();
 
     gRom = aRom;
@@ -371,6 +422,8 @@ TInt NgbaMemoryInit(
     gRomCacheLength = 0;
 
     gReady = ETrue;
+
+    NgbaPpuReset();
 
     return KErrNone;
 }
@@ -385,7 +438,6 @@ TInt NgbaMemoryInitFile(
         return KErrArgument;
 
     NgbaMemoryShutdown();
-
     ClearMemory();
 
     TInt error = gRomFs.Connect();
@@ -430,6 +482,8 @@ TInt NgbaMemoryInitFile(
 
     gReady = ETrue;
 
+    NgbaPpuReset();
+
     return KErrNone;
 }
 
@@ -447,20 +501,6 @@ void NgbaMemoryShutdown()
 
     ClearMemory();
 }
-
-// ---------------------------------------------------------
-// BIOS HLE: SWI 01h - RegisterRamReset
-//
-// R0 flags:
-// bit 0 = EWRAM
-// bit 1 = IWRAM
-// bit 2 = Palette RAM
-// bit 3 = VRAM
-// bit 4 = OAM
-// bit 5 = SIO registers
-// bit 6 = Sound registers
-// bit 7 = Other registers
-// ---------------------------------------------------------
 
 void NgbaMemoryRegisterRamReset(TUint32 aFlags)
 {
@@ -483,38 +523,19 @@ void NgbaMemoryRegisterRamReset(TUint32 aFlags)
         Mem::FillZ(gOam, sizeof(gOam));
 
     if (aFlags & (1u << 5))
-    {
-        Mem::FillZ(
-            &gIo[0x120],
-            0x0C
-        );
-    }
+        Mem::FillZ(&gIo[0x120], 0x0C);
 
     if (aFlags & (1u << 6))
-    {
-        Mem::FillZ(
-            &gIo[0x060],
-            0x48
-        );
-    }
+        Mem::FillZ(&gIo[0x060], 0x48);
 
     if (aFlags & (1u << 7))
     {
-        Mem::FillZ(
-            &gIo[0x000],
-            0x060
-        );
-
-        Mem::FillZ(
-            &gIo[0x0A8],
-            0x078
-        );
-
-        Mem::FillZ(
-            &gIo[0x134],
-            0x2CC
-        );
+        Mem::FillZ(&gIo[0x000], 0x060);
+        Mem::FillZ(&gIo[0x0A8], 0x078);
+        Mem::FillZ(&gIo[0x134], 0x2CC);
     }
+
+    NgbaPpuReset();
 }
 
 TUint8 NgbaMemoryRead8(TUint32 aAddress)
@@ -526,32 +547,27 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
 {
     aAddress &= ~1u;
 
-    const TUint16 b0 =
-        ReadMemoryByte(aAddress);
+    if (aAddress >= KIoBase &&
+        aAddress < KIoBase + KIoSize &&
+        IsPpuReadableRegister(aAddress))
+    {
+        return NgbaPpuReadIo16(aAddress);
+    }
 
-    const TUint16 b1 =
-        ReadMemoryByte(aAddress + 1);
+    const TUint16 b0 = ReadMemoryByte(aAddress);
+    const TUint16 b1 = ReadMemoryByte(aAddress + 1);
 
-    return static_cast<TUint16>(
-        b0 | (b1 << 8)
-    );
+    return static_cast<TUint16>(b0 | (b1 << 8));
 }
 
 TUint32 NgbaMemoryRead32(TUint32 aAddress)
 {
     aAddress &= ~3u;
 
-    const TUint32 b0 =
-        ReadMemoryByte(aAddress);
-
-    const TUint32 b1 =
-        ReadMemoryByte(aAddress + 1);
-
-    const TUint32 b2 =
-        ReadMemoryByte(aAddress + 2);
-
-    const TUint32 b3 =
-        ReadMemoryByte(aAddress + 3);
+    const TUint32 b0 = ReadMemoryByte(aAddress);
+    const TUint32 b1 = ReadMemoryByte(aAddress + 1);
+    const TUint32 b2 = ReadMemoryByte(aAddress + 2);
+    const TUint32 b3 = ReadMemoryByte(aAddress + 3);
 
     return b0 |
         (b1 << 8) |
@@ -574,6 +590,20 @@ void NgbaMemoryWrite16(
 {
     aAddress &= ~1u;
 
+    if (aAddress >= KIoBase &&
+        aAddress < KIoBase + KIoSize)
+    {
+        const TUint32 offset = aAddress - KIoBase;
+
+        gIo[offset] = static_cast<TUint8>(aValue);
+        gIo[offset + 1] = static_cast<TUint8>(aValue >> 8);
+
+        if (IsPpuIoAddress(aAddress))
+            NgbaPpuWriteIo16(aAddress, aValue);
+
+        return;
+    }
+
     WriteMemoryByte(
         aAddress,
         static_cast<TUint8>(aValue)
@@ -592,24 +622,14 @@ void NgbaMemoryWrite32(
 {
     aAddress &= ~3u;
 
-    WriteMemoryByte(
+    NgbaMemoryWrite16(
         aAddress,
-        static_cast<TUint8>(aValue)
+        static_cast<TUint16>(aValue)
     );
 
-    WriteMemoryByte(
-        aAddress + 1,
-        static_cast<TUint8>(aValue >> 8)
-    );
-
-    WriteMemoryByte(
+    NgbaMemoryWrite16(
         aAddress + 2,
-        static_cast<TUint8>(aValue >> 16)
-    );
-
-    WriteMemoryByte(
-        aAddress + 3,
-        static_cast<TUint8>(aValue >> 24)
+        static_cast<TUint16>(aValue >> 16)
     );
 }
 
