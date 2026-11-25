@@ -1,313 +1,228 @@
-// gba_screen_view.cc
-#include "gba_screen_view.h"
-#include "gba_ppu.h"
-#include "gba_memory.h"
+#include "ngba_top_fps_overlay.h"
 #include <eikenv.h>
-#include <e32keys.h>
+#include <w32std.h>
 
 namespace
 {
-    const TInt KFrameIntervalMicros = 16667; // 60 FPS penuh pada ARM11 680 MHz
+    const TUint8 KGlyph0[7]   = { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E };
+    const TUint8 KGlyph1[7]   = { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E };
+    const TUint8 KGlyph2[7]   = { 0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F };
+    const TUint8 KGlyph3[7]   = { 0x1F, 0x02, 0x04, 0x06, 0x01, 0x11, 0x0E };
+    const TUint8 KGlyph4[7]   = { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 };
+    const TUint8 KGlyph5[7]   = { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E };
+    const TUint8 KGlyph6[7]   = { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E };
+    const TUint8 KGlyph7[7]   = { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 };
+    const TUint8 KGlyph8[7]   = { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E };
+    const TUint8 KGlyph9[7]   = { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x1C };
+    const TUint8 KGlyphF[7]   = { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 };
+    const TUint8 KGlyphP[7]   = { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 };
+    const TUint8 KGlyphS[7]   = { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E };
+    const TUint8 KGlyphCol[7] = { 0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00 };
 
-    // Skala integer 2x dari 240x160 -> 480x320 (presisi piksel di layar 640x480 Nokia E6).
-    const TInt KScaledWidth  = KGbaScreenWidth * 2;
-    const TInt KScaledHeight = KGbaScreenHeight * 2;
-
-    // Bitmask tombol GBA (register KEYINPUT 0x04000130).
-    const TUint16 KGbaKeyA      = 0x0001u;
-    const TUint16 KGbaKeyB      = 0x0002u;
-    const TUint16 KGbaKeySelect = 0x0004u;
-    const TUint16 KGbaKeyStart  = 0x0008u;
-    const TUint16 KGbaKeyRight  = 0x0010u;
-    const TUint16 KGbaKeyLeft   = 0x0020u;
-    const TUint16 KGbaKeyUp     = 0x0040u;
-    const TUint16 KGbaKeyDown   = 0x0080u;
-    const TUint16 KGbaKeyR      = 0x0100u;
-    const TUint16 KGbaKeyL      = 0x0200u;
-
-    TUint16 MapScanCodeToGbaBit(TInt aScanCode)
+    const TUint8* GetGlyph5x7(TChar aCh)
     {
-        switch (aScanCode)
+        switch (aCh)
         {
-        // D-Pad fisik Nokia E6 & tombol arah QWERTY (WASD)
-        case EStdKeyUpArrow:
-        case 'W':
-            return KGbaKeyUp;
+        case '0': return KGlyph0;
+        case '1': return KGlyph1;
+        case '2': return KGlyph2;
+        case '3': return KGlyph3;
+        case '4': return KGlyph4;
+        case '5': return KGlyph5;
+        case '6': return KGlyph6;
+        case '7': return KGlyph7;
+        case '8': return KGlyph8;
+        case '9': return KGlyph9;
+        case 'F': return KGlyphF;
+        case 'P': return KGlyphP;
+        case 'S': return KGlyphS;
+        case ':': return KGlyphCol;
+        default:  return NULL;
+        }
+    }
 
-        case EStdKeyDownArrow:
-        case 'S':
-            return KGbaKeyDown;
+    void BuildFpsChars(TChar* aOutChars, TInt& aOutLen)
+    {
+        aOutLen = 0;
+        aOutChars[aOutLen++] = 'F';
+        aOutChars[aOutLen++] = 'P';
+        aOutChars[aOutLen++] = 'S';
+        aOutChars[aOutLen++] = ':';
 
-        case EStdKeyLeftArrow:
-        case 'A':
-            return KGbaKeyLeft;
+        TInt fpsVal = NgbaPpuGetFps();
+        if (fpsVal < 0) fpsVal = 0;
+        if (fpsVal > 999) fpsVal = 999;
 
-        case EStdKeyRightArrow:
-        case 'D':
-            return KGbaKeyRight;
+        if (fpsVal >= 100)
+            aOutChars[aOutLen++] = static_cast<TChar>('0' + ((fpsVal / 100) % 10));
+        if (fpsVal >= 10)
+            aOutChars[aOutLen++] = static_cast<TChar>('0' + ((fpsVal / 10) % 10));
+        aOutChars[aOutLen++] = static_cast<TChar>('0' + (fpsVal % 10));
+    }
+}
 
-        // Tombol A & B pada sisi kanan QWERTY Nokia E6 (L / K atau tengah D-Pad / Backspace)
-        case 'L':
-        case 'P':
-        case EStdKeyDevice3:
-            return KGbaKeyA;
+void NgbaDrawTopLeftFpsToBitmap(CFbsBitmap& aScreenBitmap)
+{
+    if (!NgbaPpuGetShowFps())
+        return;
 
-        case 'K':
-        case 'O':
-        case EStdKeyBackspace:
-            return KGbaKeyB;
+    const TSize sz = aScreenBitmap.SizeInPixels();
+    if (sz.iWidth < 80 || sz.iHeight < 30)
+        return;
 
-        // Trigger L & R pada baris atas QWERTY (Q / E atau U / I)
-        case 'Q':
-        case 'U':
-            return KGbaKeyL;
+    const TDisplayMode mode = aScreenBitmap.DisplayMode();
+    if (mode != EColor64K && mode != EColor16MU && mode != EColor16MA)
+        return;
 
-        case 'E':
-        case 'I':
-            return KGbaKeyR;
+    TChar chars[10];
+    TInt count = 0;
+    BuildFpsChars(chars, count);
 
-        // Start & Select
-        case EStdKeyEnter:
-        case 'M':
-            return KGbaKeyStart;
+    const TInt scale = (sz.iWidth >= 480) ? 2 : 1;
+    const TInt startX = 6;
+    const TInt startY = 6;
+    const TInt boxW = (count * 6 + 3) * scale;
+    const TInt boxH = 11 * scale;
 
-        case EStdKeySpace:
-        case 'N':
-            return KGbaKeySelect;
+    aScreenBitmap.BeginDataAccess();
+    TUint8* base = reinterpret_cast<TUint8*>(aScreenBitmap.DataAddress());
+    const TInt stride = aScreenBitmap.ScanLineLength(sz.iWidth, mode);
 
-        default:
-            return 0;
+    if (base != NULL)
+    {
+        for (TInt y = startY; y < startY + boxH && y < sz.iHeight; ++y)
+        {
+            if (mode == EColor64K)
+            {
+                TUint16* row = reinterpret_cast<TUint16*>(base + y * stride);
+                for (TInt x = startX; x < startX + boxW && x < sz.iWidth; ++x)
+                    row[x] = 0x0000u;
+            }
+            else
+            {
+                TUint32* row = reinterpret_cast<TUint32*>(base + y * stride);
+                for (TInt x = startX; x < startX + boxW && x < sz.iWidth; ++x)
+                    row[x] = 0xFF000000u;
+            }
+        }
+
+        const TInt textX = startX + 2 * scale;
+        const TInt textY = startY + 2 * scale;
+
+        for (TInt i = 0; i < count; ++i)
+        {
+            const TUint8* glyph = GetGlyph5x7(chars[i]);
+            if (!glyph)
+                continue;
+
+            const TInt gx0 = textX + i * 6 * scale;
+            for (TInt r = 0; r < 7; ++r)
+            {
+                const TUint8 bits = glyph[r];
+                for (TInt c = 0; c < 5; ++c)
+                {
+                    if (!(bits & (1u << (4 - c))))
+                        continue;
+
+                    for (TInt sy = 0; sy < scale; ++sy)
+                    {
+                        const TInt py = textY + r * scale + sy;
+                        if (py < 0 || py >= sz.iHeight)
+                            continue;
+
+                        if (mode == EColor64K)
+                        {
+                            TUint16* row = reinterpret_cast<TUint16*>(base + py * stride);
+                            for (TInt sx = 0; sx < scale; ++sx)
+                            {
+                                const TInt px = gx0 + c * scale + sx;
+                                if (px >= 0 && px < sz.iWidth)
+                                    row[px] = 0x07E0u;
+                            }
+                        }
+                        else
+                        {
+                            TUint32* row = reinterpret_cast<TUint32*>(base + py * stride);
+                            for (TInt sx = 0; sx < scale; ++sx)
+                            {
+                                const TInt px = gx0 + c * scale + sx;
+                                if (px >= 0 && px < sz.iWidth)
+                                    row[px] = 0xFF00FF5Au;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    aScreenBitmap.EndDataAccess();
+}
+
+void NgbaDrawTopLeftFpsToGc(CGraphicsContext& aGc, const TRect& aScreenRect)
+{
+    if (!NgbaPpuGetShowFps())
+        return;
+
+    TChar chars[10];
+    TInt count = 0;
+    BuildFpsChars(chars, count);
+
+    const TInt scale = (aScreenRect.Width() >= 480) ? 2 : 1;
+    const TInt startX = aScreenRect.iTl.iX + 6;
+    const TInt startY = aScreenRect.iTl.iY + 6;
+    const TInt boxW = (count * 6 + 3) * scale;
+    const TInt boxH = 11 * scale;
+
+    aGc.SetPenStyle(CGraphicsContext::ENullPen);
+    aGc.SetBrushStyle(CGraphicsContext::ESolidBrush);
+    aGc.SetBrushColor(TRgb(0, 0, 0));
+    aGc.DrawRect(TRect(TPoint(startX, startY), TSize(boxW, boxH)));
+
+    aGc.SetBrushColor(TRgb(0, 255, 90));
+    const TInt textX = startX + 2 * scale;
+    const TInt textY = startY + 2 * scale;
+
+    for (TInt i = 0; i < count; ++i)
+    {
+        const TUint8* glyph = GetGlyph5x7(chars[i]);
+        if (!glyph)
+            continue;
+
+        const TInt gx0 = textX + i * 6 * scale;
+        for (TInt r = 0; r < 7; ++r)
+        {
+            const TUint8 bits = glyph[r];
+            for (TInt c = 0; c < 5; ++c)
+            {
+                if (bits & (1u << (4 - c)))
+                {
+                    aGc.DrawRect(TRect(
+                        TPoint(gx0 + c * scale, textY + r * scale),
+                        TSize(scale, scale)
+                    ));
+                }
+            }
         }
     }
 }
 
-CGbaScreenView* CGbaScreenView::NewL(
-    const TRect& aRect,
-    TNgbaCpuState& aCpu
-)
+void NgbaDrawTopLeftFpsAuto()
 {
-    CGbaScreenView* self = new (ELeave) CGbaScreenView(aCpu);
-    CleanupStack::PushL(self);
-    self->ConstructL(aRect);
-    CleanupStack::Pop(self);
-    return self;
-}
+    if (!NgbaPpuGetShowFps())
+        return;
 
-CGbaScreenView::CGbaScreenView(TNgbaCpuState& aCpu)
-    : iCpu(aCpu),
-      iDsa(NULL),
-      iFrameBitmap(NULL),
-      iTimer(NULL),
-      iRgb555To888Lut(NULL),
-      iKeyInput(0x03FFu),
-      iDsaActive(EFalse)
-{
-}
+    CEikonEnv* env = CEikonEnv::Static();
+    if (!env)
+        return;
 
-CGbaScreenView::~CGbaScreenView()
-{
-    StopEmulation();
-    delete iTimer;
-    delete iDsa;
-    delete iFrameBitmap;
-    delete[] iRgb555To888Lut;
-}
+    CWsScreenDevice* screenDev = env->ScreenDevice();
+    if (!screenDev)
+        return;
 
-void CGbaScreenView::ConstructL(const TRect& aRect)
-{
-    CreateWindowL();
-    SetRect(aRect);
-
-    // Alokasi LUT 32.768 entri (128 KB) untuk konversi instan RGB555 -> XRGB8888.
-    iRgb555To888Lut = new (ELeave) TUint32[32768];
-    BuildColorLut();
-
-    // Format native layar Symbian Anna (EColor16MU = 32-bit XRGB8888) agar BitBlt tanpa konversi.
-    iFrameBitmap = new (ELeave) CFbsBitmap();
-    User::LeaveIfError(
-        iFrameBitmap->Create(
-            TSize(KScaledWidth, KScaledHeight),
-            EColor16MU
-        )
-    );
-
-    iDsa = CDirectScreenAccess::NewL(
-        iCoeEnv->WsSession(),
-        *(iCoeEnv->ScreenDevice()),
-        Window(),
-        *this
-    );
-
-    iTimer = CPeriodic::NewL(CActive::EPriorityStandard);
-    ActivateL();
-}
-
-void CGbaScreenView::BuildColorLut()
-{
-    for (TUint32 c = 0; c < 32768u; ++c)
-    {
-        const TUint32 r5 = c & 0x1Fu;
-        const TUint32 g5 = (c >> 5) & 0x1Fu;
-        const TUint32 b5 = (c >> 10) & 0x1Fu;
-
-        const TUint32 r8 = (r5 << 3) | (r5 >> 2);
-        const TUint32 g8 = (g5 << 3) | (g5 >> 2);
-        const TUint32 b8 = (b5 << 3) | (b5 >> 2);
-
-        iRgb555To888Lut[c] = (r8 << 16) | (g8 << 8) | b8;
-    }
-}
-
-void CGbaScreenView::StartEmulation()
-{
-    if (!iDsaActive)
-    {
-        TRAPD(err, iDsa->StartL());
-        if (err == KErrNone)
-        {
-            iDsaActive = ETrue;
-            CFbsBitGc* gc = iDsa->Gc();
-            gc->SetBrushStyle(CGraphicsContext::ESolidBrush);
-            gc->SetBrushColor(KRgbBlack);
-            gc->Clear(Rect());
-        }
-    }
-
-    if (!iTimer->IsActive())
-    {
-        iTimer->Start(
-            TTimeIntervalMicroSeconds32(KFrameIntervalMicros),
-            TTimeIntervalMicroSeconds32(KFrameIntervalMicros),
-            TCallBack(TickCallback, this)
-        );
-    }
-}
-
-void CGbaScreenView::StopEmulation()
-{
-    if (iTimer && iTimer->IsActive())
-        iTimer->Cancel();
-
-    if (iDsa && iDsaActive)
-    {
-        iDsa->Cancel();
-        iDsaActive = EFalse;
-    }
-}
-
-TUint16 CGbaScreenView::KeyInputState() const
-{
-    return iKeyInput;
-}
-
-void CGbaScreenView::Draw(const TRect& aRect) const
-{
-    CWindowGc& gc = SystemGc();
-    gc.SetBrushStyle(CGraphicsContext::ESolidBrush);
-    gc.SetBrushColor(KRgbBlack);
-    gc.Clear(aRect);
-}
-
-TKeyResponse CGbaScreenView::OfferKeyEventL(
-    const TKeyEvent& aKeyEvent,
-    TEventCode aType
-)
-{
-    const TUint16 bit = MapScanCodeToGbaBit(aKeyEvent.iScanCode);
-    if (bit == 0)
-        return EKeyWasNotConsumed;
-
-    if (aType == EEventKeyDown)
-        iKeyInput &= static_cast<TUint16>(~bit);
-    else if (aType == EEventKeyUp)
-        iKeyInput |= bit;
-
-    return EKeyWasConsumed;
-}
-
-void CGbaScreenView::HandleResourceChange(TInt aType)
-{
-    CCoeControl::HandleResourceChange(aType);
-    if (aType == KEikDynamicLayoutVariantSwitch)
-        SetExtentToWholeScreen();
-}
-
-void CGbaScreenView::Restart(
-    RDirectScreenAccess::TTerminationReasons /*aReason*/
-)
-{
-    TRAPD(err, iDsa->StartL());
-    if (err == KErrNone)
-    {
-        iDsaActive = ETrue;
-        CFbsBitGc* gc = iDsa->Gc();
-        gc->SetBrushStyle(CGraphicsContext::ESolidBrush);
-        gc->SetBrushColor(KRgbBlack);
-        gc->Clear(Rect());
-    }
-}
-
-void CGbaScreenView::AbortNow(
-    RDirectScreenAccess::TTerminationReasons /*aReason*/
-)
-{
-    iDsaActive = EFalse;
-}
-
-TInt CGbaScreenView::TickCallback(TAny* aPtr)
-{
-    static_cast<CGbaScreenView*>(aPtr)->OnFrameTick();
-    return 1;
-}
-
-void CGbaScreenView::OnFrameTick()
-{
-    // Sinkronkan status tombol QWERTY/D-Pad ke register KEYINPUT (0x04000130).
-    NgbaMemoryWrite16(0x04000130u, iKeyInput);
-
-    // Eksekusi 1 frame penuh (60 FPS tanpa frameskip).
-    NgbaPpuRunFrame(iCpu);
-
-    if (iDsaActive)
-        BlitFrameToScreen();
-}
-
-void CGbaScreenView::BlitFrameToScreen()
-{
-    const TUint16* src = NgbaPpuGetFrameBufferRgb555();
-
-    // 1. Konversi RGB555 -> XRGB8888 sekaligus integer scaling 2x (480x320).
-    iFrameBitmap->LockHeap();
-    TUint32* dstBase = reinterpret_cast<TUint32*>(iFrameBitmap->DataAddress());
-
-    for (TInt y = 0; y < KGbaScreenHeight; ++y)
-    {
-        const TUint16* srcRow = src + y * KGbaScreenWidth;
-        TUint32* dstRow0 = dstBase + (y * 2) * KScaledWidth;
-        TUint32* dstRow1 = dstRow0 + KScaledWidth;
-
-        for (TInt x = 0; x < KGbaScreenWidth; ++x)
-        {
-            const TUint32 pixel = iRgb555To888Lut[srcRow[x] & 0x7FFFu];
-            const TInt dx = x * 2;
-            dstRow0[dx]     = pixel;
-            dstRow0[dx + 1] = pixel;
-            dstRow1[dx]     = pixel;
-            dstRow1[dx + 1] = pixel;
-        }
-    }
-
-    iFrameBitmap->UnlockHeap();
-
-    // 2. Pusatkan 480x320 pada layar VGA 640x480 Nokia E6 (offset X=80, Y=80).
-    const TRect screenRect = Rect();
-    const TInt posX = (screenRect.Width() - KScaledWidth) / 2;
-    const TInt posY = (screenRect.Height() - KScaledHeight) / 2;
-
-    // 3. BitBlt langsung tanpa scaling GDI karena ukuran bitmap sudah 480x320.
-    CFbsBitGc* gc = iDsa->Gc();
-    gc->BitBlt(TPoint(posX, posY), iFrameBitmap);
-
-    iDsa->ScreenDevice()->Update();
-    iCoeEnv->WsSession().Flush();
+    const TSize scrSize = screenDev->SizeInPixels();
+    CWindowGc& gc = env->SystemGc();
+    gc.Activate(*env->RootWin());
+    NgbaDrawTopLeftFpsToGc(gc, TRect(TPoint(0, 0), scrSize));
+    gc.Deactivate();
 }
