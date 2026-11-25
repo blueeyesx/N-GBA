@@ -900,17 +900,15 @@ namespace
             {
                 if (arithmetic)
                 {
-                    if (arithmetic)
-{
-    SetArithmeticFlags(
-        cpu,
-        (opcode == 7) ? right : left,
-        (opcode == 7) ? left : right,
-        result,
-        subtract,
-        carryIn
-    );
-}
+                    SetArithmeticFlags(
+                        cpu,
+                        left,
+                        (opcode == 7) ? left : right,
+                        result,
+                        subtract,
+                        carryIn
+                    );
+                }
                 else
                 {
                     SetNzFlags(cpu, result);
