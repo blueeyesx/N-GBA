@@ -1,14 +1,17 @@
-#ifndef NGBA_SETTINGS_FPS_HELPER_H
-#define NGBA_SETTINGS_FPS_HELPER_H
+#ifndef NGBA_TOP_FPS_OVERLAY_H
+#define NGBA_TOP_FPS_OVERLAY_H
 
-#include <e32def.h>
-#include <e32des.h>
+#include <w32std.h>
+#include <fbs.h>
 #include "gba_fps_setting.h"
 
-// Toggle status tampilkan FPS (ON <-> OFF) dan kembalikan nilai status terbaru.
-TBool NgbaToggleShowFps();
+// Gambar FPS di ujung kiri atas layar penuh (di luar kotak game) ke CFbsBitmap.
+void NgbaDrawTopLeftFpsToBitmap(CFbsBitmap& aScreenBitmap);
 
-// Isi buffer teks label menu FPS, misal: "FPS: ON" / "FPS: OFF" atau "FPS: AKTIF" / "FPS: NONAKTIF".
-void NgbaGetFpsMenuLabel(TDes& aDest, TBool aIndonesian = ETrue);
+// Gambar FPS di ujung kiri atas layar penuh (di luar kotak game) ke CGraphicsContext.
+void NgbaDrawTopLeftFpsToGc(CGraphicsContext& aGc, const TRect& aScreenRect);
 
-#endif // NGBA_SETTINGS_FPS_HELPER_H
+// Helper otomatis: menggambar FPS di ujung kiri atas layar lewat CWsScreenDevice / CWindowGc aktif.
+void NgbaDrawTopLeftFpsAuto();
+
+#endif // NGBA_TOP_FPS_OVERLAY_H
