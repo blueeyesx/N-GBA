@@ -848,7 +848,7 @@ void DrawGbaFrame(
         y + height
     );
 
-    gc.DrawBitmap(destination, bitmap);
+    gc.DrawBitmap(destination, &bitmap);
 }
 
 // --------------------------------------------------
