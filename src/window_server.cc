@@ -54,7 +54,10 @@ const TInt KMenuTop = 72;
 _LIT(KLanguageFolder, "C:\\Data\\N-GBA\\");
 _LIT(KLanguageFile, "C:\\Data\\N-GBA\\language.dat");
 _LIT(KFontFile, "C:\\Data\\N-GBA\\font.dat");
-_LIT(KLogFile, "C:\\Data\\N-GBA\\ngba.log");
+
+_LIT(KLogFolder, "E:\\GBA\\");
+_LIT(KLogFile, "E:\\GBA\\ngba.log");
+
 _LIT(KRomFolder, "E:\\GBA\\");
 
 // --------------------------------------------------
@@ -70,7 +73,9 @@ void LogMessage(const TDesC& message)
         return;
     }
 
-    error = fs.MkDirAll(KLanguageFolder);
+    // Folder log berada di E:\GBA\
+    // Jika drive E: tidak tersedia, log dilewati.
+    error = fs.MkDirAll(KLogFolder);
 
     if (error != KErrNone && error != KErrAlreadyExists) {
         fs.Close();
@@ -321,6 +326,7 @@ TInt SaveByteSetting(const TDesC& fileName, TInt value)
         return error;
     }
 
+    // Pengaturan bahasa dan font tetap disimpan di C:.
     error = fs.MkDirAll(KLanguageFolder);
 
     if (error != KErrNone && error != KErrAlreadyExists) {
@@ -950,7 +956,7 @@ void DrawLogPage(
     DrawText(gc, "N-GBA / LOG", 12, 30, KWhite);
     DrawText(
         gc,
-        "C:\\Data\\N-GBA\\ngba.log",
+        "E:\\GBA\\ngba.log",
         12,
         51,
         KBlue
