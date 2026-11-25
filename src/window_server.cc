@@ -810,8 +810,7 @@ void UpdateGbaBitmap(CFbsBitmap& bitmap)
     bitmap.LockHeap();
 
     TUint16* pixels =
-        static_cast<TUint16*>(bitmap.DataAddress());
-
+        reinterpret_cast<TUint16*>(bitmap.DataAddress());
     if (pixels != NULL) {
         NgbaPpuConvertToRgb565(pixels);
     }
