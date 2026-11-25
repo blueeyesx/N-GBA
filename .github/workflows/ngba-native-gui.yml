@@ -8,6 +8,8 @@ on:
       - "src/app.cc"
       - "src/window_server.cc"
       - "src/window_server.h"
+      - "src/ngba_paths.cc"
+      - "src/ngba_paths.h"
       - "src/rom_loader.cc"
       - "src/rom_loader.h"
       - "src/arm7tdmi.cc"
@@ -80,6 +82,8 @@ jobs:
             src/app.cc \
             src/window_server.cc \
             src/window_server.h \
+            src/ngba_paths.cc \
+            src/ngba_paths.h \
             src/rom_loader.cc \
             src/rom_loader.h \
             src/arm7tdmi.cc \
@@ -130,6 +134,12 @@ jobs:
 
           cp src/window_server.h \
             "$PROJECT/src/window_server.h"
+
+          cp src/ngba_paths.h \
+            "$PROJECT/src/ngba_paths.h"
+
+          cp src/ngba_paths.cc \
+            "$PROJECT/src/ngba_paths.cc"
 
           cp src/rom_loader.h \
             "$PROJECT/src/rom_loader.h"
@@ -214,6 +224,7 @@ jobs:
           symbian_add_executable(
               ngba_native_gui
               src/window_server.cc
+              src/ngba_paths.cc
               src/rom_loader.cc
               src/arm7tdmi.cc
               src/gba_memory.cc
@@ -274,6 +285,8 @@ jobs:
           test -s "$PROJECT/app.cc"
           test -s "$PROJECT/src/window_server.cc"
           test -s "$PROJECT/src/window_server.h"
+          test -s "$PROJECT/src/ngba_paths.h"
+          test -s "$PROJECT/src/ngba_paths.cc"
           test -s "$PROJECT/src/rom_loader.h"
           test -s "$PROJECT/src/rom_loader.cc"
           test -s "$PROJECT/src/arm7tdmi.h"
@@ -292,6 +305,12 @@ jobs:
           grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/cpu_selftest.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
+
+          grep -q 'NgbaPathsInit' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaGetRootPath' \
+            "$PROJECT/src/window_server.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
