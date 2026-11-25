@@ -14,6 +14,8 @@ on:
       - "src/arm7tdmi.h"
       - "src/gba_memory.cc"
       - "src/gba_memory.h"
+      - "src/gba_ppu.cc"
+      - "src/gba_ppu.h"
       - "src/cpu_selftest.cc"
       - "src/cpu_selftest.h"
       - "src/main.cpp"
@@ -86,6 +88,8 @@ jobs:
             src/arm7tdmi.h \
             src/gba_memory.cc \
             src/gba_memory.h \
+            src/gba_ppu.cc \
+            src/gba_ppu.h \
             src/cpu_selftest.cc \
             src/cpu_selftest.h \
             symbian.toml
@@ -149,6 +153,12 @@ jobs:
           cp src/gba_memory.cc \
             "$PROJECT/src/gba_memory.cc"
 
+          cp src/gba_ppu.h \
+            "$PROJECT/src/gba_ppu.h"
+
+          cp src/gba_ppu.cc \
+            "$PROJECT/src/gba_ppu.cc"
+
           cp src/cpu_selftest.h \
             "$PROJECT/src/cpu_selftest.h"
 
@@ -159,6 +169,10 @@ jobs:
           rm -f "$PROJECT/src/main.cpp"
 
           echo "All N-GBA sources installed."
+
+          echo "Checking PPU files:"
+          ls -lh "$PROJECT/src/gba_ppu.h"
+          ls -lh "$PROJECT/src/gba_ppu.cc"
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -217,6 +231,7 @@ jobs:
               src/rom_loader.cc
               src/arm7tdmi.cc
               src/gba_memory.cc
+              src/gba_ppu.cc
               src/cpu_selftest.cc
           )
 
@@ -271,17 +286,26 @@ jobs:
         run: |
           set -e
 
-          test -s "$PROJECT/app.cc"
-          test -s "$PROJECT/src/window_server.cc"
-          test -s "$PROJECT/src/window_server.h"
-          test -s "$PROJECT/src/rom_loader.h"
-          test -s "$PROJECT/src/rom_loader.cc"
-          test -s "$PROJECT/src/arm7tdmi.h"
-          test -s "$PROJECT/src/arm7tdmi.cc"
-          test -s "$PROJECT/src/gba_memory.h"
-          test -s "$PROJECT/src/gba_memory.cc"
-          test -s "$PROJECT/src/cpu_selftest.h"
-          test -s "$PROJECT/src/cpu_selftest.cc"
+          for file in \
+            "$PROJECT/app.cc" \
+            "$PROJECT/src/window_server.cc" \
+            "$PROJECT/src/window_server.h" \
+            "$PROJECT/src/rom_loader.h" \
+            "$PROJECT/src/rom_loader.cc" \
+            "$PROJECT/src/arm7tdmi.h" \
+            "$PROJECT/src/arm7tdmi.cc" \
+            "$PROJECT/src/gba_memory.h" \
+            "$PROJECT/src/gba_memory.cc" \
+            "$PROJECT/src/gba_ppu.h" \
+            "$PROJECT/src/gba_ppu.cc" \
+            "$PROJECT/src/cpu_selftest.h" \
+            "$PROJECT/src/cpu_selftest.cc"
+          do
+            test -s "$file" || {
+              echo "ERROR: Missing build source: $file"
+              exit 1
+            }
+          done
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
           grep -q 'NgbaLoadRom' "$PROJECT/src/rom_loader.cc"
@@ -292,6 +316,11 @@ jobs:
           grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/cpu_selftest.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
+
+          grep -q 'NgbaPpuReset' "$PROJECT/src/gba_ppu.cc"
+          grep -q 'NgbaPpuRunFrame' "$PROJECT/src/gba_ppu.cc"
+          grep -q 'NgbaPpuReadIo16' "$PROJECT/src/gba_ppu.cc"
+          grep -q 'NgbaPpuWriteIo16' "$PROJECT/src/gba_ppu.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
