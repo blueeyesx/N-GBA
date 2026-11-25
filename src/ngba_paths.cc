@@ -31,6 +31,7 @@ _LIT(KLogFile, "ngba.log");
 _LIT(KBiosFile, "gba_bios.bin");
 
 const TInt KMaxMigrationDepth = 16;
+const TInt KCopyBufferSize = 4096;
 
 TFileName gRootPath;
 TChar gDrive = 'C';
@@ -66,7 +67,6 @@ TInt AppendPath(
     }
 
     aPath.Append(aPart);
-
     return KErrNone;
 }
 
@@ -127,6 +127,8 @@ TBool IsGbaFile(const TDesC& aName)
     );
 }
 
+// Menyalin file menggunakan RFile.
+// File tujuan yang sudah ada tidak akan ditimpa.
 TInt CopyFileIfMissing(
     RFs& aFs,
     const TDesC& aSource,
@@ -140,7 +142,6 @@ TInt CopyFileIfMissing(
         entry
     );
 
-    // Jangan menimpa file yang sudah ada.
     if (error == KErrNone)
         return KErrNone;
 
@@ -160,10 +161,100 @@ TInt CopyFileIfMissing(
     if (error != KErrNone)
         return error;
 
-    return aFs.Copy(
+    RFile sourceFile;
+
+    error = sourceFile.Open(
+        aFs,
         aSource,
-        aDestination
+        EFileRead | EFileShareReadersOnly
     );
+
+    if (error != KErrNone)
+        return error;
+
+    TInt fileSize = 0;
+
+    error = sourceFile.Size(fileSize);
+
+    if (error != KErrNone)
+    {
+        sourceFile.Close();
+        return error;
+    }
+
+    RFile destinationFile;
+
+    error = destinationFile.Create(
+        aFs,
+        aDestination,
+        EFileWrite | EFileShareExclusive
+    );
+
+    if (error == KErrAlreadyExists)
+    {
+        sourceFile.Close();
+        return KErrNone;
+    }
+
+    if (error != KErrNone)
+    {
+        sourceFile.Close();
+        return error;
+    }
+
+    TInt position = 0;
+
+    TBuf8<KCopyBufferSize> buffer;
+
+    while (position < fileSize)
+    {
+        buffer.Zero();
+
+        TInt remaining = fileSize - position;
+
+        TInt amount = (
+            remaining > KCopyBufferSize
+            ? KCopyBufferSize
+            : remaining
+        );
+
+        error = sourceFile.Read(
+            position,
+            buffer,
+            amount
+        );
+
+        if (error != KErrNone)
+            break;
+
+        if (buffer.Length() == 0)
+        {
+            error = KErrCorrupt;
+            break;
+        }
+
+        error = destinationFile.Write(
+            position,
+            buffer
+        );
+
+        if (error != KErrNone)
+            break;
+
+        position += buffer.Length();
+    }
+
+    destinationFile.Close();
+    sourceFile.Close();
+
+    // Hapus file parsial jika penyalinan gagal.
+    if (error != KErrNone)
+    {
+        aFs.Delete(aDestination);
+        return error;
+    }
+
+    return KErrNone;
 }
 
 TInt MigrateFolder(
@@ -235,6 +326,7 @@ TInt MigrateFolder(
             if (AppendPath(destination, entry.iName) != KErrNone)
                 continue;
 
+            // Kegagalan satu file tidak menghentikan migrasi.
             CopyFileIfMissing(
                 aFs,
                 source,
@@ -265,10 +357,13 @@ TInt MigrateFolder(
                 continue;
             }
 
-            AppendPath(
+            if (AppendPath(
                 sourceFolder,
                 _L("\\")
-            );
+            ) != KErrNone)
+            {
+                continue;
+            }
 
             TFileName destinationFolder;
             destinationFolder.Copy(aTargetRoot);
@@ -373,6 +468,10 @@ void BuildFilePath(
 
 }
 
+// --------------------------------------------------
+// PUBLIC API
+// --------------------------------------------------
+
 TInt NgbaPathsInit()
 {
     gReady = EFalse;
@@ -390,8 +489,9 @@ TInt NgbaPathsInit()
     if (error == KErrNone)
     {
         // Migrasi data lama.
-        // Kegagalan menyalin satu file tidak membatalkan
-        // inisialisasi direktori utama.
+        // Sumber lama tidak dihapus.
+        // Kegagalan menyalin satu file tidak
+        // membatalkan inisialisasi direktori.
         MigrateFolder(
             fs,
             KOldRoot,
