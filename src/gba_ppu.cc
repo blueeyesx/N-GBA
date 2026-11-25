@@ -1877,43 +1877,40 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 
     ++gPpuFrameCounter;
 
-    if (gPpuFrameCounter == 1u ||
-        (gPpuFrameCounter % 300u) == 0u)
+    const TBool shouldLogFrame =
+        (gPpuFrameCounter <= 10u) ||
+        ((gPpuFrameCounter % 60u) == 0u);
+
+    if (shouldLogFrame)
     {
-        TBuf<128> message;
+        TBuf<192> message;
 
         message.Copy(_L("FRAME="));
-
-        message.AppendNum(
-            static_cast<TInt>(gPpuFrameCounter)
-        );
+        message.AppendNum(static_cast<TInt>(gPpuFrameCounter));
 
         message.Append(_L(" DISPCNT=0x"));
-
-        message.AppendNum(
-            static_cast<TInt>(gPpu.dispCnt),
-            EHex
-        );
+        message.AppendNum(static_cast<TInt>(gPpu.dispCnt), EHex);
 
         message.Append(_L(" VCOUNT="));
+        message.AppendNum(static_cast<TInt>(gPpu.vCount));
 
-        message.AppendNum(
-            static_cast<TInt>(gPpu.vCount)
-        );
+        message.Append(_L(" PC=0x"));
+        message.AppendNum(static_cast<TInt>(aCpu.r[15]), EHex);
 
-        message.Append(_L(" CPU_CYCLES=0x"));
+        message.Append(_L(" IE=0x"));
+        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000200u)), EHex);
 
-        message.AppendNum(
-            static_cast<TInt>(aCpu.cycles),
-            EHex
-        );
+        message.Append(_L(" IF=0x"));
+        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000202u)), EHex);
+
+        message.Append(_L(" IME=0x"));
+        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000208u) & 1u), EHex);
+
+        message.Append(_L(" PAL0=0x"));
+        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(KPalRamBase) & 0x7FFFu), EHex);
 
         message.Append(_L(" PIXEL0=0x"));
-
-        message.AppendNum(
-            static_cast<TInt>(gPpu.frameBuffer[0]),
-            EHex
-        );
+        message.AppendNum(static_cast<TInt>(gPpu.frameBuffer[0]), EHex);
 
         WritePpuLog(message);
     }
