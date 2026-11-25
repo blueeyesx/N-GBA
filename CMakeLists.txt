@@ -17,5 +17,6 @@ target_link_libraries(
     Symbian::Stackless
     Symbian::WindowServer
     Symbian::Gdi
-    Symbian::FbsCli
+    Symbian::BitmapGdi
+    Symbian::FontStore
 )
