@@ -1299,3 +1299,25 @@ void NgbaPpuConvertToRgb565(TUint16* aDestRgb565)
     }
 }
 
+
+void NgbaPpuConvertToXrgb8888(TUint32* aDestXrgb8888)
+{
+    if (aDestXrgb8888 == NULL)
+        return;
+
+    for (TInt i = 0; i < KGbaScreenPixels; ++i)
+    {
+        const TUint16 c = gPpu.frameBuffer[i];
+
+        const TUint32 r5 = c & 0x1Fu;
+        const TUint32 g5 = (c >> 5) & 0x1Fu;
+        const TUint32 b5 = (c >> 10) & 0x1Fu;
+
+        const TUint32 r8 = (r5 << 3) | (r5 >> 2);
+        const TUint32 g8 = (g5 << 3) | (g5 >> 2);
+        const TUint32 b8 = (b5 << 3) | (b5 >> 2);
+
+        aDestXrgb8888[i] =
+            (r8 << 16) | (g8 << 8) | b8;
+    }
+}
