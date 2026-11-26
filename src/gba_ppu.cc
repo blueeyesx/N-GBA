@@ -776,7 +776,7 @@ else if (bgMode == 4)
     }
 }
 
-        }
+        
         else if (bgMode == 5)
         {
             if ((gPpu.dispCnt & (1u << 10)) != 0 && aY < 128)
