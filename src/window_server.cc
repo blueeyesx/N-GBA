@@ -1937,20 +1937,20 @@ TInt RunWindowServer()
                                                     }
 
                                                     window.Invalidate();
-    }
-    else {
-        // Jadwalkan frame berikutnya.
-        cpuTimer.After(
-            cpuTimerStatus,
-            TTimeIntervalMicroSeconds32(
-                KCpuTimerInterval
-            )
-        );
+                                                 }
+                                                 else {
+                                                     // Jadwalkan frame berikutnya.
+                                                     cpuTimer.After(
+                                                        cpuTimerStatus,
+                                                        TTimeIntervalMicroSeconds32(
+                                                            KCpuTimerInterval
+                                                        )
+                                                     );
 
-        cpuTimerPending = ETrue;
+                                                      cpuTimerPending = ETrue;
 
-        // Perbarui tampilan framebuffer.
-        window.Invalidate();
+                                                      // Perbarui tampilan framebuffer.
+                                                      window.Invalidate();
                                        }
                                      }
                                     }
