@@ -373,46 +373,6 @@ namespace
                     gGameConfig.flashRomSize = 32 * 1024;
             }
         }
-
-        // Konfigurasi bawaan untuk Pokemon Gen 3 jika tidak ada di game_config.ini.
-        if (gGameCode.Compare(_L8("BPEE")) == 0)
-        {
-            gGameConfig.found = ETrue;
-            gGameConfig.gameCode.Copy(gGameCode);
-            if (gGameConfig.flashRomSize == 0)
-                gGameConfig.flashRomSize = 128 * 1024;
-            if (!gGameConfig.hasIdleLoopTarget)
-            {
-                gGameConfig.idleLoopTarget = 0x080008CEu;
-                gGameConfig.hasIdleLoopTarget = ETrue;
-            }
-        }
-        else if (gGameCode.Compare(_L8("BPRE")) == 0 ||
-                 gGameCode.Compare(_L8("BPGE")) == 0)
-        {
-            gGameConfig.found = ETrue;
-            gGameConfig.gameCode.Copy(gGameCode);
-            if (gGameConfig.flashRomSize == 0)
-                gGameConfig.flashRomSize = 128 * 1024;
-            if (!gGameConfig.hasIdleLoopTarget)
-            {
-                gGameConfig.idleLoopTarget = 0x080008B2u;
-                gGameConfig.hasIdleLoopTarget = ETrue;
-            }
-        }
-        else if (gGameCode.Compare(_L8("AXVE")) == 0 ||
-                 gGameCode.Compare(_L8("AXPE")) == 0)
-        {
-            gGameConfig.found = ETrue;
-            gGameConfig.gameCode.Copy(gGameCode);
-            if (gGameConfig.flashRomSize == 0)
-                gGameConfig.flashRomSize = 128 * 1024;
-            if (!gGameConfig.hasIdleLoopTarget)
-            {
-                gGameConfig.idleLoopTarget = 0x080007C6u;
-                gGameConfig.hasIdleLoopTarget = ETrue;
-            }
-        }
     }
 }
 

@@ -1,3 +1,4 @@
+
 #ifndef NGBA_ARM7TDMI_H
 #define NGBA_ARM7TDMI_H
 
@@ -7,32 +8,6 @@ struct TNgbaCpuState
 {
     TUint32 r[16];
     TUint32 cpsr;
-
-    // Banked registers per processor mode.
-    TUint32 r8_usr[5];
-    TUint32 r13_usr;
-    TUint32 r14_usr;
-
-    TUint32 r8_fiq[5];
-    TUint32 r13_fiq;
-    TUint32 r14_fiq;
-    TUint32 spsr_fiq;
-
-    TUint32 r13_irq;
-    TUint32 r14_irq;
-    TUint32 spsr_irq;
-
-    TUint32 r13_svc;
-    TUint32 r14_svc;
-    TUint32 spsr_svc;
-
-    TUint32 r13_abt;
-    TUint32 r14_abt;
-    TUint32 spsr_abt;
-
-    TUint32 r13_und;
-    TUint32 r14_und;
-    TUint32 spsr_und;
 
     TBool halted;
     TBool thumb;
@@ -56,8 +31,6 @@ enum TNgbaCpuResult
 void NgbaCpuReset(TNgbaCpuState& aCpu);
 
 TInt NgbaCpuStep(TNgbaCpuState& aCpu);
-
-TBool NgbaCpuTriggerIrq(TNgbaCpuState& aCpu);
 
 TUint32 NgbaCpuGetRegister(
     const TNgbaCpuState& aCpu,
