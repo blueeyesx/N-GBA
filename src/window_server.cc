@@ -1075,7 +1075,6 @@ void DrawMenu(
     const char* diagnostic
 )
 {
-    {
     if (page == EGamePage) {
         NgbaScreenViewDraw(
             gc,
