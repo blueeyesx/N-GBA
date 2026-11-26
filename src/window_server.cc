@@ -1880,39 +1880,39 @@ TInt RunWindowServer()
                                             window.Invalidate();
                                         }
                                         else if (cpuActive && page == EGamePage) {
-    previousAddress = cpu.lastAddress;
-    previousOpcode = cpu.lastOpcode;
+                                        previousAddress = cpu.lastAddress;
+                                        previousOpcode = cpu.lastOpcode;
 
-    hasPreviousInstruction =
-        cpu.lastInstructionSize == 2 ||
-        cpu.lastInstructionSize == 4;
+                                        hasPreviousInstruction =
+                                        cpu.lastInstructionSize == 2 ||
+                                        cpu.lastInstructionSize == 4;
 
-    const TInt stepResult = NgbaPpuRunFrame(cpu);
+                                       const TInt stepResult = NgbaPpuRunFrame(cpu);
 
-    if (stepResult != ENgbaCpuOk) {
-        cpuActive = EFalse;
+                                       if (stepResult != ENgbaCpuOk) {
+                                       cpuActive = EFalse;
 
-        if (stepResult == ENgbaCpuUnsupported) {
-            FormatCpuDiagnostic(
-                cpu,
-                previousAddress,
-                previousOpcode,
-                hasPreviousInstruction,
-                diagnostic
-            );
+                                       if (stepResult == ENgbaCpuUnsupported) {
+                                           FormatCpuDiagnostic(
+                                               cpu,
+                                               previousAddress,
+                                               previousOpcode,
+                                               hasPreviousInstruction,
+                                               diagnostic
+                                            );
 
-            LogMessage(
-                _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
-            );
+                                          LogMessage(
+                                         _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
+                                        );
 
-            LogCpuDiagnostic(diagnostic);
+                                          LogCpuDiagnostic(diagnostic);
 
-            message = indonesian
-                ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
-                : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
-        }
-        else if (stepResult == ENgbaCpuRomEnd) {
-            LogMessage(_L("CPU REACHED ROM END"));
+                                         message = indonesian
+                                         ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
+                                         : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
+                                       }
+                                       else if (stepResult == ENgbaCpuRomEnd) {
+                                           LogMessage(_L("CPU REACHED ROM END"));
 
             message = indonesian
                 ? "CPU MENCAPAI AKHIR ROM"
@@ -1951,8 +1951,8 @@ TInt RunWindowServer()
 
         // Perbarui tampilan framebuffer.
         window.Invalidate();
-    }
-}
+                                       }
+                                     }
                                     }
 
                                     // --------------------------------
