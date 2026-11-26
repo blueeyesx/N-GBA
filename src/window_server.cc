@@ -1880,14 +1880,14 @@ TInt RunWindowServer()
                                             window.Invalidate();
                                         }
                                             else if (cpuActive && page == EGamePage) {
-                                        previousAddress = cpu.lastAddress;
-                                        previousOpcode = cpu.lastOpcode;
+                                                    previousAddress = cpu.lastAddress;
+                                                    previousOpcode = cpu.lastOpcode;
 
-                                        hasPreviousInstruction =
-                                        cpu.lastInstructionSize == 2 ||
-                                        cpu.lastInstructionSize == 4;
+                                                    hasPreviousInstruction =
+                                                    cpu.lastInstructionSize == 2 ||
+                                                    cpu.lastInstructionSize == 4;
 
-                                       const TInt stepResult = NgbaPpuRunFrame(cpu);
+                                            const TInt stepResult = NgbaPpuRunFrame(cpu);
 
                                        if (stepResult != ENgbaCpuOk) {
                                        cpuActive = EFalse;
