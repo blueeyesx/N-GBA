@@ -1879,7 +1879,7 @@ TInt RunWindowServer()
 
                                             window.Invalidate();
                                         }
-                                        else if (cpuActive && page == EGamePage) {
+                                            else if (cpuActive && page == EGamePage) {
                                         previousAddress = cpu.lastAddress;
                                         previousOpcode = cpu.lastOpcode;
 
