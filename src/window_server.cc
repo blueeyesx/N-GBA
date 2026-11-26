@@ -1879,88 +1879,80 @@ TInt RunWindowServer()
 
                                             window.Invalidate();
                                         }
-                                        else if (cpuActive && page == ERomPage) {
-                                            TInt stepResult = ENgbaCpuOk;
+                                        else if (cpuActive && page == EGamePage) {
+    previousAddress = cpu.lastAddress;
+    previousOpcode = cpu.lastOpcode;
 
-                                            for (
-                                                TInt i = 0;
-                                                i < KCpuInstructionsPerTick;
-                                                ++i
-                                            ) {
-                                                previousAddress = cpu.lastAddress;
-                                                previousOpcode = cpu.lastOpcode;
+    hasPreviousInstruction =
+        cpu.lastInstructionSize == 2 ||
+        cpu.lastInstructionSize == 4;
 
-                                                hasPreviousInstruction =
-                                                    cpu.lastInstructionSize == 2 ||
-                                                    cpu.lastInstructionSize == 4;
+    const TInt stepResult = NgbaPpuRunFrame(cpu);
 
-                                                stepResult = NgbaCpuStep(cpu);
+    if (stepResult != ENgbaCpuOk) {
+        cpuActive = EFalse;
 
-                                                if (stepResult != ENgbaCpuOk) {
-                                                    break;
-                                                }
-                                            }
+        if (stepResult == ENgbaCpuUnsupported) {
+            FormatCpuDiagnostic(
+                cpu,
+                previousAddress,
+                previousOpcode,
+                hasPreviousInstruction,
+                diagnostic
+            );
 
-                                            if (stepResult != ENgbaCpuOk) {
-                                                cpuActive = EFalse;
+            LogMessage(
+                _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
+            );
 
-                                                if (stepResult == ENgbaCpuUnsupported) {
-                                                    FormatCpuDiagnostic(
-                                                        cpu,
-                                                        previousAddress,
-                                                        previousOpcode,
-                                                        hasPreviousInstruction,
-                                                        diagnostic
-                                                    );
+            LogCpuDiagnostic(diagnostic);
 
-                                                    LogMessage(
-                                                        _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
-                                                    );
+            message = indonesian
+                ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
+                : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
+        }
+        else if (stepResult == ENgbaCpuRomEnd) {
+            LogMessage(_L("CPU REACHED ROM END"));
 
-                                                    LogCpuDiagnostic(diagnostic);
+            message = indonesian
+                ? "CPU MENCAPAI AKHIR ROM"
+                : "CPU REACHED ROM END";
+        }
+        else {
+            LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
 
-                                                    message = indonesian
-                                                        ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
-                                                        : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
-                                                }
-                                                else if (stepResult == ENgbaCpuRomEnd) {
-                                                    LogMessage(_L("CPU REACHED ROM END"));
+            FormatCpuDiagnostic(
+                cpu,
+                previousAddress,
+                previousOpcode,
+                hasPreviousInstruction,
+                diagnostic
+            );
 
-                                                    message = indonesian
-                                                        ? "CPU MENCAPAI AKHIR ROM"
-                                                        : "CPU REACHED ROM END";
-                                                }
-                                                else {
-                                                    LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
+            LogCpuDiagnostic(diagnostic);
 
-                                                    FormatCpuDiagnostic(
-                                                        cpu,
-                                                        previousAddress,
-                                                        previousOpcode,
-                                                        hasPreviousInstruction,
-                                                        diagnostic
-                                                    );
+            message = indonesian
+                ? "CPU BERHENTI - KESALAHAN"
+                : "CPU STOPPED - ERROR";
+        }
 
-                                                    LogCpuDiagnostic(diagnostic);
+        window.Invalidate();
+    }
+    else {
+        // Jadwalkan frame berikutnya.
+        cpuTimer.After(
+            cpuTimerStatus,
+            TTimeIntervalMicroSeconds32(
+                KCpuTimerInterval
+            )
+        );
 
-                                                    message = indonesian
-                                                        ? "CPU BERHENTI - KESALAHAN"
-                                                        : "CPU STOPPED - ERROR";
-                                                }
+        cpuTimerPending = ETrue;
 
-                                                window.Invalidate();
-                                            }
-                                            else {
-                                                cpuTimer.After(
-                                                    cpuTimerStatus,
-                                                    TTimeIntervalMicroSeconds32(
-                                                        KCpuTimerInterval
-                                                    )
-                                                );
-
-                                                cpuTimerPending = ETrue;
-                                            }
-                                        }
+        // Perbarui tampilan framebuffer.
+        window.Invalidate();
+    }
+}
                                     }
 
                                     // --------------------------------
