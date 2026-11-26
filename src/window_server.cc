@@ -1507,7 +1507,17 @@ TInt RunWindowServer()
 
             error = gc.Construct();
 
-            if (error == KErrNone) {
+        if (error == KErrNone) {
+
+               TInt screenViewError = NgbaScreenViewInitialize();
+
+                if (screenViewError != KErrNone) {
+                    LogMessage(_L("SCREEN VIEW INITIALIZATION FAILED"));
+                }
+                else {
+                    LogMessage(_L("SCREEN VIEW INITIALIZED"));
+                }
+
                 const TSize size = screen.SizeInPixels();
 
                 TInt languageMode = LoadLanguageMode();
