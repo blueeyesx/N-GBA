@@ -143,7 +143,7 @@ TInt RunCpuCycles(TNgbaCpuState& aCpu, TInt aTargetCycles)
     }
 
     return ENgbaCpuOk;
-}
+
 
     }
 
