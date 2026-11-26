@@ -1,3 +1,4 @@
+
 name: N-GBA - Nokia E6 Native GUI
 
 on:
@@ -13,8 +14,6 @@ on:
       - "src/arm7tdmi.h"
       - "src/gba_memory.cc"
       - "src/gba_memory.h"
-      - "src/gba_ppu.cc"
-      - "src/gba_ppu.h"
       - "src/cpu_selftest.cc"
       - "src/cpu_selftest.h"
       - "src/main.cpp"
@@ -87,8 +86,6 @@ jobs:
             src/arm7tdmi.h \
             src/gba_memory.cc \
             src/gba_memory.h \
-            src/gba_ppu.cc \
-            src/gba_ppu.h \
             src/cpu_selftest.cc \
             src/cpu_selftest.h \
             symbian.toml
@@ -124,26 +121,44 @@ jobs:
           mkdir -p "$PROJECT/src"
 
           cp src/app.cc "$PROJECT/app.cc"
-          cp src/window_server.cc "$PROJECT/src/window_server.cc"
-          cp src/window_server.h "$PROJECT/window_server.h"
-          cp src/window_server.h "$PROJECT/src/window_server.h"
-          cp src/rom_loader.h "$PROJECT/src/rom_loader.h"
-          cp src/rom_loader.cc "$PROJECT/src/rom_loader.cc"
-          cp src/arm7tdmi.h "$PROJECT/src/arm7tdmi.h"
-          cp src/arm7tdmi.cc "$PROJECT/src/arm7tdmi.cc"
-          cp src/gba_memory.h "$PROJECT/src/gba_memory.h"
-          cp src/gba_memory.cc "$PROJECT/src/gba_memory.cc"
-          cp src/gba_ppu.h "$PROJECT/src/gba_ppu.h"
-          cp src/gba_ppu.cc "$PROJECT/src/gba_ppu.cc"
-          cp src/cpu_selftest.h "$PROJECT/src/cpu_selftest.h"
-          cp src/cpu_selftest.cc "$PROJECT/src/cpu_selftest.cc"
+
+          cp src/window_server.cc \
+            "$PROJECT/src/window_server.cc"
+
+          cp src/window_server.h \
+            "$PROJECT/window_server.h"
+
+          cp src/window_server.h \
+            "$PROJECT/src/window_server.h"
+
+          cp src/rom_loader.h \
+            "$PROJECT/src/rom_loader.h"
+
+          cp src/rom_loader.cc \
+            "$PROJECT/src/rom_loader.cc"
+
+          cp src/arm7tdmi.h \
+            "$PROJECT/src/arm7tdmi.h"
+
+          cp src/arm7tdmi.cc \
+            "$PROJECT/src/arm7tdmi.cc"
+
+          cp src/gba_memory.h \
+            "$PROJECT/src/gba_memory.h"
+
+          cp src/gba_memory.cc \
+            "$PROJECT/src/gba_memory.cc"
+
+          cp src/cpu_selftest.h \
+            "$PROJECT/src/cpu_selftest.h"
+
+          cp src/cpu_selftest.cc \
+            "$PROJECT/src/cpu_selftest.cc"
 
           rm -f "$PROJECT/src/app.cc"
           rm -f "$PROJECT/src/main.cpp"
 
           echo "All N-GBA sources installed."
-          ls -lh "$PROJECT/src/gba_ppu.h"
-          ls -lh "$PROJECT/src/gba_ppu.cc"
 
       - name: Remove unsupported TRAPD implementation
         shell: bash
@@ -156,6 +171,7 @@ jobs:
 
           path = pathlib.Path(sys.argv[1])
           content = path.read_text()
+
           marker = "int GuiWindowServerMain()"
 
           if content.count(marker) != 1:
@@ -164,12 +180,14 @@ jobs:
               )
 
           prefix = content.split(marker, 1)[0]
+
           replacement = """int GuiWindowServerMain() {
               return RunWindowServer();
           }
           """
 
           path.write_text(prefix + replacement)
+
           print("Patched GuiWindowServerMain().")
           PY
 
@@ -199,7 +217,6 @@ jobs:
               src/rom_loader.cc
               src/arm7tdmi.cc
               src/gba_memory.cc
-              src/gba_ppu.cc
               src/cpu_selftest.cc
           )
 
@@ -210,13 +227,9 @@ jobs:
               Symbian::WindowServer
               Symbian::Gdi
               Symbian::FileServer
-              Symbian::Bitmap
-              Symbian::BitmapGdi
-              Symbian::FontStore
           )
           CMAKE
 
-          echo "Generated CMakeLists.txt:"
           cat "$PROJECT/CMakeLists.txt"
 
       - name: Configure Symbian metadata
@@ -234,6 +247,7 @@ jobs:
 
           path = pathlib.Path(sys.argv[1])
           architecture = sys.argv[2]
+
           content = path.read_text()
 
           content, count = re.subn(
@@ -257,26 +271,17 @@ jobs:
         run: |
           set -e
 
-          for file in \
-            "$PROJECT/app.cc" \
-            "$PROJECT/src/window_server.cc" \
-            "$PROJECT/src/window_server.h" \
-            "$PROJECT/src/rom_loader.h" \
-            "$PROJECT/src/rom_loader.cc" \
-            "$PROJECT/src/arm7tdmi.h" \
-            "$PROJECT/src/arm7tdmi.cc" \
-            "$PROJECT/src/gba_memory.h" \
-            "$PROJECT/src/gba_memory.cc" \
-            "$PROJECT/src/gba_ppu.h" \
-            "$PROJECT/src/gba_ppu.cc" \
-            "$PROJECT/src/cpu_selftest.h" \
-            "$PROJECT/src/cpu_selftest.cc"
-          do
-            test -s "$file" || {
-              echo "ERROR: Missing build source: $file"
-              exit 1
-            }
-          done
+          test -s "$PROJECT/app.cc"
+          test -s "$PROJECT/src/window_server.cc"
+          test -s "$PROJECT/src/window_server.h"
+          test -s "$PROJECT/src/rom_loader.h"
+          test -s "$PROJECT/src/rom_loader.cc"
+          test -s "$PROJECT/src/arm7tdmi.h"
+          test -s "$PROJECT/src/arm7tdmi.cc"
+          test -s "$PROJECT/src/gba_memory.h"
+          test -s "$PROJECT/src/gba_memory.cc"
+          test -s "$PROJECT/src/cpu_selftest.h"
+          test -s "$PROJECT/src/cpu_selftest.cc"
 
           grep -q 'GuiWindowServerMain' "$PROJECT/app.cc"
           grep -q 'NgbaLoadRom' "$PROJECT/src/rom_loader.cc"
@@ -287,14 +292,18 @@ jobs:
           grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/cpu_selftest.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
-          grep -q 'NgbaPpuReset' "$PROJECT/src/gba_ppu.cc"
-          grep -q 'NgbaPpuRunFrame' "$PROJECT/src/gba_ppu.cc"
-          grep -q 'NgbaPpuReadIo16' "$PROJECT/src/gba_ppu.cc"
-          grep -q 'NgbaPpuWriteIo16' "$PROJECT/src/gba_ppu.cc"
-          grep -q 'LoadLanguageMode' "$PROJECT/src/window_server.cc"
-          grep -q 'SaveLanguageMode' "$PROJECT/src/window_server.cc"
-          grep -q 'NgbaLoadRom' "$PROJECT/src/window_server.cc"
-          grep -q 'NgbaReleaseRom' "$PROJECT/src/window_server.cc"
+
+          grep -q 'LoadLanguageMode' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'SaveLanguageMode' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaLoadRom' \
+            "$PROJECT/src/window_server.cc"
+
+          grep -q 'NgbaReleaseRom' \
+            "$PROJECT/src/window_server.cc"
 
           if [ -f "$PROJECT/src/app.cc" ]; then
             echo "ERROR: Duplicate app.cc."
@@ -327,7 +336,8 @@ jobs:
 
           if [ ! -s "$EXE" ]; then
             echo "ERROR: Executable not generated."
-            find "$PROJECT/.symbian" -maxdepth 7 -type f || true
+            find "$PROJECT/.symbian" \
+              -maxdepth 7 -type f || true
             exit 1
           fi
 
@@ -363,7 +373,8 @@ jobs:
 
           if [ ! -s "$SIS" ]; then
             echo "ERROR: SIS not generated."
-            find "$PROJECT/.symbian" -maxdepth 7 -type f || true
+            find "$PROJECT/.symbian" \
+              -maxdepth 7 -type f || true
             exit 1
           fi
 
