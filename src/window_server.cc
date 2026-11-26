@@ -694,6 +694,7 @@ TInt MenuCount(TInt page, TInt romCount)
     if (page == ELanguagePage) return KLanguageMenuCount;
     if (page == EFontPage) return KFontMenuCount;
     if (page == ELogPage) return KLogMenuCount;
+    if (page == EGamePage) return 1;
 
     if (page == ERomPage) {
         return romCount > 0 ? romCount + 1 : 1;
