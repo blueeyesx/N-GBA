@@ -42,6 +42,7 @@ enum TMenuPage {
     ELanguagePage,
     EFontPage,
     ERomPage,
+    EGamePage,
     ELogPage
 };
 
