@@ -1887,21 +1887,21 @@ TInt RunWindowServer()
                                                 cpu.lastInstructionSize == 2 ||
                                                 cpu.lastInstructionSize == 4;
 
-                                            const TInt stepResult = NgbaPpuRunFrame(cpu);
+                                                const TInt stepResult = NgbaPpuRunFrame(cpu);
 
-                                        if (stepResult != ENgbaCpuOk) {
-                                           cpuActive = EFalse;
+                                                if (stepResult != ENgbaCpuOk) {
+                                                    cpuActive = EFalse;
 
-                                        if (stepResult == ENgbaCpuUnsupported) {
-                                           FormatCpuDiagnostic(
-                                               cpu,
-                                               previousAddress,
-                                               previousOpcode,
-                                               hasPreviousInstruction,
-                                               diagnostic
-                                            );
+                                                    if (stepResult == ENgbaCpuUnsupported) {
+                                                        FormatCpuDiagnostic(
+                                                            cpu,
+                                                            previousAddress,
+                                                            previousOpcode,
+                                                            hasPreviousInstruction,
+                                                            diagnostic
+                                                        );
 
-                                            LogMessage(
+                                                        LogMessage(
                                             _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
                                             );
 
