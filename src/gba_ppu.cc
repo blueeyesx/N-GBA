@@ -1203,9 +1203,9 @@ void NgbaPpuRenderLine(TInt aLine)
     gPpu.internalY[1] += gPpu.bgPd[1];
 }
 
-void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
+
+TInt NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 {
-    // Muat ulang titik referensi internal Affine BG2 & BG3 pada awal frame.
     gPpu.internalX[0] = gPpu.bgAffX[0];
     gPpu.internalY[0] = gPpu.bgAffY[0];
     gPpu.internalX[1] = gPpu.bgAffX[1];
@@ -1213,17 +1213,14 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 
     for (TUint16 line = 0; line < KTotalLines; ++line)
     {
-        // 1. Fase HDraw (960 siklus CPU).
         UpdateVCountAndStat(line, EFalse);
 
-        // VCounter Match IRQ (DISPSTAT bit 5).
         if ((gPpu.dispStat & 0x0004u) != 0 &&
             (gPpu.dispStat & (1u << 5)) != 0)
         {
             RaisePpuIrq(KIrqVCount);
         }
 
-        // Awal VBlank pada scanline 160.
         if (line == KVisibleLines)
         {
             if (gPpu.dispStat & (1u << 3))
@@ -1233,9 +1230,11 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
                 gVBlankCallback();
         }
 
-        RunCpuCycles(aCpu, KCyclesHDraw);
+        TInt status = RunCpuCycles(aCpu, KCyclesHDraw);
 
-        // 2. Fase HBlank (272 siklus CPU).
+        if (status != ENgbaCpuOk)
+            return status;
+
         UpdateVCountAndStat(line, ETrue);
 
         if (line < KVisibleLines)
@@ -1244,6 +1243,7 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 
             gPpu.internalX[0] += gPpu.bgPb[0];
             gPpu.internalY[0] += gPpu.bgPd[0];
+
             gPpu.internalX[1] += gPpu.bgPb[1];
             gPpu.internalY[1] += gPpu.bgPd[1];
 
@@ -1254,9 +1254,15 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
         if (gPpu.dispStat & (1u << 4))
             RaisePpuIrq(KIrqHBlank);
 
-        RunCpuCycles(aCpu, KCyclesHBlank);
+        status = RunCpuCycles(aCpu, KCyclesHBlank);
+
+        if (status != ENgbaCpuOk)
+            return status;
     }
+
+    return ENgbaCpuOk;
 }
+
 
 // ---------------------------------------------------------
 // FRAMEBUFFER ACCESS & COLOR CONVERSION
