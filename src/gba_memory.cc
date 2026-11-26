@@ -1,4 +1,6 @@
+
 #include "gba_memory.h"
+#include "gba_ppu.h"
 
 #include <e32std.h>
 #include <f32file.h>
@@ -24,6 +26,9 @@ namespace
     const TUint32 KRomBase = 0x08000000u;
     const TUint32 KSramBase = 0x0E000000u;
 
+    const TUint32 KPpuIoStart = 0x04000000u;
+    const TUint32 KPpuIoEnd = 0x04000057u;
+
     TUint8 gEwram[KEwramSize];
     TUint8 gIwram[KIwramSize];
     TUint8 gIo[KIoSize];
@@ -44,6 +49,14 @@ namespace
 
     TInt gRomSize = 0;
     TBool gReady = EFalse;
+
+    TBool IsPpuIoAddress(TUint32 aAddress)
+    {
+        return (
+            aAddress >= KPpuIoStart &&
+            aAddress <= KPpuIoEnd
+        );
+    }
 
     void CloseRomFile()
     {
@@ -208,6 +221,9 @@ namespace
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
         {
+            if (IsPpuIoAddress(aAddress))
+                return NgbaPpuReadIo8(aAddress);
+
             return gIo[aAddress - KIoBase];
         }
 
@@ -294,6 +310,12 @@ namespace
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
         {
+            if (IsPpuIoAddress(aAddress))
+            {
+                NgbaPpuWriteIo8(aAddress, aValue);
+                return;
+            }
+
             gIo[aAddress - KIoBase] = aValue;
             return;
         }
@@ -450,16 +472,6 @@ void NgbaMemoryShutdown()
 
 // ---------------------------------------------------------
 // BIOS HLE: SWI 01h - RegisterRamReset
-//
-// R0 flags:
-// bit 0 = EWRAM
-// bit 1 = IWRAM
-// bit 2 = Palette RAM
-// bit 3 = VRAM
-// bit 4 = OAM
-// bit 5 = SIO registers
-// bit 6 = Sound registers
-// bit 7 = Other registers
 // ---------------------------------------------------------
 
 void NgbaMemoryRegisterRamReset(TUint32 aFlags)
@@ -526,6 +538,9 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
 {
     aAddress &= ~1u;
 
+    if (IsPpuIoAddress(aAddress))
+        return NgbaPpuReadIo16(aAddress);
+
     const TUint16 b0 =
         ReadMemoryByte(aAddress);
 
@@ -540,6 +555,9 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
 TUint32 NgbaMemoryRead32(TUint32 aAddress)
 {
     aAddress &= ~3u;
+
+    if (IsPpuIoAddress(aAddress))
+        return NgbaPpuReadIo32(aAddress);
 
     const TUint32 b0 =
         ReadMemoryByte(aAddress);
@@ -574,6 +592,12 @@ void NgbaMemoryWrite16(
 {
     aAddress &= ~1u;
 
+    if (IsPpuIoAddress(aAddress))
+    {
+        NgbaPpuWriteIo16(aAddress, aValue);
+        return;
+    }
+
     WriteMemoryByte(
         aAddress,
         static_cast<TUint8>(aValue)
@@ -591,6 +615,12 @@ void NgbaMemoryWrite32(
 )
 {
     aAddress &= ~3u;
+
+    if (IsPpuIoAddress(aAddress))
+    {
+        NgbaPpuWriteIo32(aAddress, aValue);
+        return;
+    }
 
     WriteMemoryByte(
         aAddress,
