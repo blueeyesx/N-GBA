@@ -1041,8 +1041,7 @@ namespace
     TInt ExecuteBiosLz77UnComp(TNgbaCpuState& cpu, TBool write16Bit)
     {
         TUint32 src = cpu.r[0];
-        const TUint32 baseDst = write16Bit ? (cpu.r[1] & ~1u) : cpu.r[1];
-        TUint32 dst = baseDst;
+        TUint32 dst = cpu.r[1];
 
         const TUint32 header = NgbaMemoryRead32(src);
         src += 4u;
@@ -1100,7 +1099,7 @@ namespace
                         if (write16Bit)
                         {
                             const TUint32 currentOutAddr =
-                                baseDst + written;
+                                cpu.r[1] + written;
                             const TUint32 refAddr =
                                 currentOutAddr - disp;
 
@@ -1148,7 +1147,7 @@ namespace
 
     TInt ExecuteBiosHuffUnComp(TNgbaCpuState& cpu)
     {
-        const TUint32 src = cpu.r[0];
+        TUint32 src = cpu.r[0];
         TUint32 dst = cpu.r[1] & ~3u;
 
         const TUint32 header = NgbaMemoryRead32(src);
@@ -1161,7 +1160,7 @@ namespace
         const TUint32 treeSize =
             (static_cast<TUint32>(NgbaMemoryRead8(src + 4u)) + 1u) * 2u;
         const TUint32 treeRootAddr = src + 5u;
-        TUint32 bitStreamAddr = (src + 4u + treeSize + 3u) & ~3u;
+        TUint32 bitStreamAddr = src + 4u + treeSize;
 
         TUint32 nodeAddr = treeRootAddr;
         TUint32 outWord = 0;
@@ -1209,16 +1208,13 @@ namespace
             }
         }
 
-        if (outShift > 0 && written < destSize)
-            NgbaMemoryWrite32(dst, outWord);
-
         return ENgbaCpuOk;
     }
 
     TInt ExecuteBiosRlUnComp(TNgbaCpuState& cpu, TBool write16Bit)
     {
         TUint32 src = cpu.r[0];
-        TUint32 dst = write16Bit ? (cpu.r[1] & ~1u) : cpu.r[1];
+        TUint32 dst = cpu.r[1];
 
         const TUint32 header = NgbaMemoryRead32(src);
         src += 4u;
@@ -2416,7 +2412,6 @@ namespace
 
             case 3:
                 result = old - value;
-                cpu.r[rd] = result;
                 SetArithmeticFlags(cpu, old, value, result, ETrue);
                 break;
             }
