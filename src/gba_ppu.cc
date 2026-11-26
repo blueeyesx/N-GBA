@@ -1275,31 +1275,27 @@ const TUint16* NgbaPpuGetFrameBufferRgb555()
     return gPpu.frameBuffer;
 }
 
+
 void NgbaPpuConvertToRgb565(TUint16* aDestRgb565)
 {
+    if (aDestRgb565 == NULL)
+        return;
+
     for (TInt i = 0; i < KGbaScreenPixels; ++i)
     {
         const TUint16 c = gPpu.frameBuffer[i];
-        const TUint16 r = static_cast<TUint16>((c & 0x001Fu) << 11);
-        const TUint16 g = static_cast<TUint16>(((c & 0x03E0u) << 1) | ((c >> 9) & 0x0020u));
-        const TUint16 b = static_cast<TUint16>((c >> 10) & 0x001Fu);
+
+        const TUint16 r5 = c & 0x001Fu;
+        const TUint16 g5 = (c >> 5) & 0x001Fu;
+        const TUint16 b5 = (c >> 10) & 0x001Fu;
+
+        const TUint16 r = static_cast<TUint16>(r5 << 11);
+        const TUint16 g = static_cast<TUint16>(
+            ((g5 << 1) | (g5 >> 4)) << 5
+        );
+        const TUint16 b = b5;
+
         aDestRgb565[i] = static_cast<TUint16>(r | g | b);
     }
 }
 
-void NgbaPpuConvertToXrgb8888(TUint32* aDestXrgb8888)
-{
-    for (TInt i = 0; i < KGbaScreenPixels; ++i)
-    {
-        const TUint32 c = gPpu.frameBuffer[i];
-        const TUint32 r5 = c & 0x1Fu;
-        const TUint32 g5 = (c >> 5) & 0x1Fu;
-        const TUint32 b5 = (c >> 10) & 0x1Fu;
-
-        const TUint32 r8 = (r5 << 3) | (r5 >> 2);
-        const TUint32 g8 = (g5 << 3) | (g5 >> 2);
-        const TUint32 b8 = (b5 << 3) | (b5 >> 2);
-
-        aDestXrgb8888[i] = 0xFF000000u | (r8 << 16) | (g8 << 8) | b8;
-    }
-}
