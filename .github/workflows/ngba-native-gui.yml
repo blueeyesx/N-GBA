@@ -1,4 +1,3 @@
-
 name: N-GBA - Nokia E6 Native GUI
 
 on:
@@ -14,6 +13,8 @@ on:
       - "src/arm7tdmi.h"
       - "src/gba_memory.cc"
       - "src/gba_memory.h"
+      - "src/gba_ppu.cc"
+      - "src/gba_ppu.h"
       - "src/cpu_selftest.cc"
       - "src/cpu_selftest.h"
       - "src/main.cpp"
@@ -86,6 +87,8 @@ jobs:
             src/arm7tdmi.h \
             src/gba_memory.cc \
             src/gba_memory.h \
+            src/gba_ppu.cc \
+            src/gba_ppu.h \
             src/cpu_selftest.cc \
             src/cpu_selftest.h \
             symbian.toml
@@ -148,6 +151,12 @@ jobs:
 
           cp src/gba_memory.cc \
             "$PROJECT/src/gba_memory.cc"
+
+          cp src/gba_ppu.h \
+            "$PROJECT/src/gba_ppu.h"
+
+          cp src/gba_ppu.cc \
+            "$PROJECT/src/gba_ppu.cc"
 
           cp src/cpu_selftest.h \
             "$PROJECT/src/cpu_selftest.h"
@@ -217,6 +226,7 @@ jobs:
               src/rom_loader.cc
               src/arm7tdmi.cc
               src/gba_memory.cc
+              src/gba_ppu.cc
               src/cpu_selftest.cc
           )
 
@@ -280,6 +290,8 @@ jobs:
           test -s "$PROJECT/src/arm7tdmi.cc"
           test -s "$PROJECT/src/gba_memory.h"
           test -s "$PROJECT/src/gba_memory.cc"
+          test -s "$PROJECT/src/gba_ppu.h"
+          test -s "$PROJECT/src/gba_ppu.cc"
           test -s "$PROJECT/src/cpu_selftest.h"
           test -s "$PROJECT/src/cpu_selftest.cc"
 
@@ -292,6 +304,8 @@ jobs:
           grep -q 'NgbaMemoryWrite32' "$PROJECT/src/gba_memory.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/cpu_selftest.cc"
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
+          grep -q 'NgbaPpuRunFrame' "$PROJECT/src/gba_ppu.cc"
+          grep -q 'NgbaPpuGetFrameBufferRgb555' "$PROJECT/src/gba_ppu.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
