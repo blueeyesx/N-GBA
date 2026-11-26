@@ -1951,8 +1951,8 @@ TInt RunWindowServer()
 
                                                       // Perbarui tampilan framebuffer.
                                                       window.Invalidate();
-                                       }
-                                     }
+                                                   }
+                                                }
                                     }
 
                                     // --------------------------------
