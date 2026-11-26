@@ -1880,19 +1880,19 @@ TInt RunWindowServer()
                                             window.Invalidate();
                                         }
                                             else if (cpuActive && page == EGamePage) {
-                                                    previousAddress = cpu.lastAddress;
-                                                    previousOpcode = cpu.lastOpcode;
+                                                previousAddress = cpu.lastAddress;
+                                                previousOpcode = cpu.lastOpcode;
 
-                                                    hasPreviousInstruction =
-                                                    cpu.lastInstructionSize == 2 ||
-                                                    cpu.lastInstructionSize == 4;
+                                                hasPreviousInstruction =
+                                                cpu.lastInstructionSize == 2 ||
+                                                cpu.lastInstructionSize == 4;
 
                                             const TInt stepResult = NgbaPpuRunFrame(cpu);
 
-                                       if (stepResult != ENgbaCpuOk) {
-                                       cpuActive = EFalse;
+                                        if (stepResult != ENgbaCpuOk) {
+                                           cpuActive = EFalse;
 
-                                       if (stepResult == ENgbaCpuUnsupported) {
+                                        if (stepResult == ENgbaCpuUnsupported) {
                                            FormatCpuDiagnostic(
                                                cpu,
                                                previousAddress,
@@ -1901,40 +1901,40 @@ TInt RunWindowServer()
                                                diagnostic
                                             );
 
-                                          LogMessage(
-                                         _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
-                                        );
+                                            LogMessage(
+                                            _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
+                                            );
 
-                                          LogCpuDiagnostic(diagnostic);
+                                            LogCpuDiagnostic(diagnostic);
 
-                                         message = indonesian
-                                         ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
-                                         : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
-                                       }
-                                       else if (stepResult == ENgbaCpuRomEnd) {
-                                           LogMessage(_L("CPU REACHED ROM END"));
+                                                    message = indonesian
+                                                    ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
+                                                    : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
+                                           }
+                                            else if (stepResult == ENgbaCpuRomEnd) {
+                                            LogMessage(_L("CPU REACHED ROM END"));
 
-            message = indonesian
-                ? "CPU MENCAPAI AKHIR ROM"
-                : "CPU REACHED ROM END";
-        }
-        else {
-            LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
+                                                    message = indonesian
+                                                    ? "CPU MENCAPAI AKHIR ROM"
+                                                    : "CPU REACHED ROM END";
+                                                   }
+                                                    else {
+                                            LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
 
-            FormatCpuDiagnostic(
-                cpu,
-                previousAddress,
-                previousOpcode,
-                hasPreviousInstruction,
-                diagnostic
-            );
+                                            FormatCpuDiagnostic(
+                                               cpu,
+                                               previousAddress,
+                                               previousOpcode,
+                                               hasPreviousInstruction,
+                                               diagnostic
+                                           );
 
-            LogCpuDiagnostic(diagnostic);
+                                             LogCpuDiagnostic(diagnostic);
 
-            message = indonesian
-                ? "CPU BERHENTI - KESALAHAN"
-                : "CPU STOPPED - ERROR";
-        }
+                                               message = indonesian
+                                               ? "CPU BERHENTI - KESALAHAN"
+                                               : "CPU STOPPED - ERROR";
+                                            }
 
         window.Invalidate();
     }
