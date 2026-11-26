@@ -1902,14 +1902,14 @@ TInt RunWindowServer()
                                                         );
 
                                                         LogMessage(
-                                            _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
-                                            );
+                                                            _L("CPU STOPPED: UNSUPPORTED INSTRUCTION")
+                                                        );
 
                                             LogCpuDiagnostic(diagnostic);
 
-                                                    message = indonesian
-                                                    ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
-                                                    : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
+                                                        message = indonesian
+                                                            ? "CPU BERHENTI - INSTRUKSI BELUM DIDUKUNG"
+                                                            : "CPU STOPPED - UNSUPPORTED INSTRUCTION";
                                            }
                                             else if (stepResult == ENgbaCpuRomEnd) {
                                             LogMessage(_L("CPU REACHED ROM END"));
@@ -1917,7 +1917,7 @@ TInt RunWindowServer()
                                                     message = indonesian
                                                     ? "CPU MENCAPAI AKHIR ROM"
                                                     : "CPU REACHED ROM END";
-                                                   }
+                                                    }
                                                     else {
                                             LogMessage(_L("CPU STOPPED: EXECUTION ERROR"));
 
@@ -1929,14 +1929,14 @@ TInt RunWindowServer()
                                                diagnostic
                                            );
 
-                                             LogCpuDiagnostic(diagnostic);
+                                            LogCpuDiagnostic(diagnostic);
 
-                                               message = indonesian
-                                               ? "CPU BERHENTI - KESALAHAN"
-                                               : "CPU STOPPED - ERROR";
-                                            }
+                                                        message = indonesian
+                                                            ? "CPU BERHENTI - KESALAHAN"
+                                                            : "CPU STOPPED - ERROR";
+                                                    }
 
-        window.Invalidate();
+                                                    window.Invalidate();
     }
     else {
         // Jadwalkan frame berikutnya.
