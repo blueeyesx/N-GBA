@@ -1463,6 +1463,10 @@ void GoBack(
         page = ESettingsPage;
         selected = 1;
     }
+    else if (page == EGamePage) {
+        page = ERomPage;
+        selected = 0;
+    }
     else if (page == ERomPage) {
         page = EMainPage;
         selected = 0;
