@@ -1372,6 +1372,10 @@ void ActivateSelected(
 
             if (loadError == KErrNone) {
                 NgbaCpuReset(cpu);
+                NgbaPpuReset();
+
+                page = EGamePage;
+                selected = 0;
 
                 previousAddress = 0;
                 previousOpcode = 0;
