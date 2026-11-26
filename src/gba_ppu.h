@@ -27,7 +27,7 @@ void NgbaPpuWriteIo16(TUint32 aAddress, TUint16 aValue);
 void NgbaPpuWriteIo32(TUint32 aAddress, TUint32 aValue);
 
 // Menjalankan satu frame GBA.
-// Mengembalikan status CPU agar kesalahan instruksi tidak tersembunyi.
+// Mengembalikan status CPU jika ditemukan instruksi yang bermasalah.
 TInt NgbaPpuRunFrame(TNgbaCpuState& aCpu);
 
 void NgbaPpuRenderLine(TInt aLine);
