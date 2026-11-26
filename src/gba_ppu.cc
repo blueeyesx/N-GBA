@@ -84,7 +84,6 @@ namespace
 
     TUint32 gPpuFrameCounter = 0;
     TUint16 gLastLoggedDispCnt = 0xFFFFu;
-    TBool gLoggedCpuError = EFalse;
 
     _LIT(KPpuLogFolder, "E:\\GBA\\");
     _LIT(KPpuLogFile, "E:\\GBA\\ngba.log");
@@ -265,21 +264,7 @@ namespace
             const TInt status = NgbaCpuStep(aCpu);
 
             if (status != ENgbaCpuOk)
-            {
-                if (!gLoggedCpuError)
-                {
-                    gLoggedCpuError = ETrue;
-                    TBuf<128> msg;
-                    msg.Copy(_L("CPU HALT PC=0x"));
-                    msg.AppendNum(static_cast<TInt>(aCpu.lastAddress), EHex);
-                    msg.Append(_L(" OP=0x"));
-                    msg.AppendNum(static_cast<TInt>(aCpu.lastOpcode), EHex);
-                    msg.Append(_L(" CPSR=0x"));
-                    msg.AppendNum(static_cast<TInt>(aCpu.cpsr), EHex);
-                    WritePpuLog(msg);
-                }
                 break;
-            }
         }
     }
 
@@ -1374,7 +1359,6 @@ void NgbaPpuReset()
 {
     gPpuFrameCounter = 0;
     gLastLoggedDispCnt = 0xFFFFu;
-    gLoggedCpuError = EFalse;
 
     gPpu.dispCnt = 0;
     gPpu.greenSwap = 0;
@@ -1795,151 +1779,6 @@ void NgbaPpuWriteIo32(
 // FRAME & SCANLINE EXECUTION
 // ---------------------------------------------------------
 
-
-    // ---------------------------------------------------------
-    // FPS COUNTER & ON-SCREEN BITMAP OVERLAY
-    // ---------------------------------------------------------
-
-    TBool   gShowFps        = ETrue;
-    TInt    gCurrentFps     = 0;
-    TInt    gFpsFrameWindow = 0;
-    TUint32 gFpsLastTick    = 0;
-
-    // 5x7 bitmap glyphs for '0'-'9', 'F', 'P', 'S', ':'
-    const TUint8 KGlyph0[7] = { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E };
-    const TUint8 KGlyph1[7] = { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E };
-    const TUint8 KGlyph2[7] = { 0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F };
-    const TUint8 KGlyph3[7] = { 0x1F, 0x02, 0x04, 0x06, 0x01, 0x11, 0x0E };
-    const TUint8 KGlyph4[7] = { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 };
-    const TUint8 KGlyph5[7] = { 0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E };
-    const TUint8 KGlyph6[7] = { 0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E };
-    const TUint8 KGlyph7[7] = { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 };
-    const TUint8 KGlyph8[7] = { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E };
-    const TUint8 KGlyph9[7] = { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x1C };
-    const TUint8 KGlyphF[7] = { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 };
-    const TUint8 KGlyphP[7] = { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 };
-    const TUint8 KGlyphS[7] = { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E };
-    const TUint8 KGlyphCol[7] = { 0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00 };
-
-    const TUint8* GetGlyph5x7(TChar aCh)
-    {
-        switch (aCh)
-        {
-        case '0': return KGlyph0;
-        case '1': return KGlyph1;
-        case '2': return KGlyph2;
-        case '3': return KGlyph3;
-        case '4': return KGlyph4;
-        case '5': return KGlyph5;
-        case '6': return KGlyph6;
-        case '7': return KGlyph7;
-        case '8': return KGlyph8;
-        case '9': return KGlyph9;
-        case 'F': return KGlyphF;
-        case 'P': return KGlyphP;
-        case 'S': return KGlyphS;
-        case ':': return KGlyphCol;
-        default:  return NULL;
-        }
-    }
-
-    void DrawChar5x7(TInt aX, TInt aY, TChar aCh, TUint16 aFgColor)
-    {
-        const TUint8* glyph = GetGlyph5x7(aCh);
-        if (glyph == NULL)
-            return;
-
-        for (TInt row = 0; row < 7; ++row)
-        {
-            const TInt py = aY + row;
-            if (py < 0 || py >= KGbaScreenHeight)
-                continue;
-
-            const TUint8 bits = glyph[row];
-            for (TInt col = 0; col < 5; ++col)
-            {
-                const TInt px = aX + col;
-                if (px < 0 || px >= KGbaScreenWidth)
-                    continue;
-
-                if (bits & (1u << (4 - col)))
-                {
-                    gPpu.frameBuffer[py * KGbaScreenWidth + px] = aFgColor;
-                }
-            }
-        }
-    }
-
-    void UpdateAndDrawFpsOverlay()
-    {
-        const TUint32 nowTick = User::TickCount();
-        ++gFpsFrameWindow;
-
-        if (gFpsLastTick == 0u)
-        {
-            gFpsLastTick = nowTick;
-        }
-        else
-        {
-            const TUint32 deltaTicks = nowTick - gFpsLastTick;
-            // Di Symbian, 1 tick umumnya ~1/64 detik (15625 us) atau 1000 us tergantung HAL;
-            // gunakan ambang >= 32 ticks (~0.5 detik) agar stabil dan responsif.
-            if (deltaTicks >= 32u)
-            {
-                gCurrentFps = static_cast<TInt>(
-                    (gFpsFrameWindow * 64) / static_cast<TInt>(deltaTicks)
-                );
-                if (gCurrentFps < 0)
-                    gCurrentFps = 0;
-                if (gCurrentFps > 999)
-                    gCurrentFps = 999;
-
-                gFpsFrameWindow = 0;
-                gFpsLastTick = nowTick;
-            }
-        }
-
-        if (!gShowFps)
-            return;
-
-        // Kotak latar belakang semi-gelap / hitam di kiri atas (46x11 px)
-        const TInt boxX = 2;
-        const TInt boxY = 2;
-        const TInt boxW = 46;
-        const TInt boxH = 11;
-
-        for (TInt y = boxY; y < boxY + boxH && y < KGbaScreenHeight; ++y)
-        {
-            for (TInt x = boxX; x < boxX + boxW && x < KGbaScreenWidth; ++x)
-            {
-                gPpu.frameBuffer[y * KGbaScreenWidth + x] = 0x0000u;
-            }
-        }
-
-        // Warna hijau terang (RGB555: G=31 -> 0x03E0)
-        const TUint16 fpsColor = 0x03E0u;
-        TInt cx = boxX + 2;
-        const TInt cy = boxY + 2;
-
-        DrawChar5x7(cx, cy, 'F', fpsColor); cx += 6;
-        DrawChar5x7(cx, cy, 'P', fpsColor); cx += 6;
-        DrawChar5x7(cx, cy, 'S', fpsColor); cx += 6;
-        DrawChar5x7(cx, cy, ':', fpsColor); cx += 6;
-
-        const TInt fpsVal = gCurrentFps;
-        if (fpsVal >= 100)
-        {
-            DrawChar5x7(cx, cy, static_cast<TChar>('0' + ((fpsVal / 100) % 10)), fpsColor);
-            cx += 6;
-        }
-        if (fpsVal >= 10)
-        {
-            DrawChar5x7(cx, cy, static_cast<TChar>('0' + ((fpsVal / 10) % 10)), fpsColor);
-            cx += 6;
-        }
-        DrawChar5x7(cx, cy, static_cast<TChar>('0' + (fpsVal % 10)), fpsColor);
-    }
-
 void NgbaPpuRenderLine(TInt aLine)
 {
     if (aLine < 0 || aLine >= KVisibleLines)
@@ -2017,47 +1856,48 @@ void NgbaPpuRunFrame(TNgbaCpuState& aCpu)
     }
 
     // -----------------------------------------------------
-    UpdateAndDrawFpsOverlay();
-
     // PPU FRAME LOG
     // -----------------------------------------------------
 
     ++gPpuFrameCounter;
 
-    const TBool shouldLogFrame =
-        (gPpuFrameCounter <= 10u) ||
-        ((gPpuFrameCounter % 60u) == 0u);
-
-    if (shouldLogFrame)
+    if (gPpuFrameCounter == 1u ||
+        (gPpuFrameCounter % 300u) == 0u)
     {
-        TBuf<192> message;
+        TBuf<128> message;
 
         message.Copy(_L("FRAME="));
-        message.AppendNum(static_cast<TInt>(gPpuFrameCounter));
+
+        message.AppendNum(
+            static_cast<TInt>(gPpuFrameCounter)
+        );
 
         message.Append(_L(" DISPCNT=0x"));
-        message.AppendNum(static_cast<TInt>(gPpu.dispCnt), EHex);
+
+        message.AppendNum(
+            static_cast<TInt>(gPpu.dispCnt),
+            EHex
+        );
 
         message.Append(_L(" VCOUNT="));
-        message.AppendNum(static_cast<TInt>(gPpu.vCount));
 
-        message.Append(_L(" PC=0x"));
-        message.AppendNum(static_cast<TInt>(aCpu.r[15]), EHex);
+        message.AppendNum(
+            static_cast<TInt>(gPpu.vCount)
+        );
 
-        message.Append(_L(" IE=0x"));
-        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000200u)), EHex);
+        message.Append(_L(" CPU_CYCLES=0x"));
 
-        message.Append(_L(" IF=0x"));
-        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000202u)), EHex);
-
-        message.Append(_L(" IME=0x"));
-        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000208u) & 1u), EHex);
-
-        message.Append(_L(" PAL0=0x"));
-        message.AppendNum(static_cast<TInt>(NgbaMemoryRead16(KPalRamBase) & 0x7FFFu), EHex);
+        message.AppendNum(
+            static_cast<TInt>(aCpu.cycles),
+            EHex
+        );
 
         message.Append(_L(" PIXEL0=0x"));
-        message.AppendNum(static_cast<TInt>(gPpu.frameBuffer[0]), EHex);
+
+        message.AppendNum(
+            static_cast<TInt>(gPpu.frameBuffer[0]),
+            EHex
+        );
 
         WritePpuLog(message);
     }
@@ -2125,20 +1965,4 @@ void NgbaPpuConvertToXrgb8888(TUint32* aDestXrgb8888)
             (g8 << 8) |
             b8;
     }
-}
-
-
-void NgbaPpuSetShowFps(TBool aEnabled)
-{
-    gShowFps = aEnabled ? ETrue : EFalse;
-}
-
-TBool NgbaPpuGetShowFps()
-{
-    return gShowFps;
-}
-
-TInt NgbaPpuGetFps()
-{
-    return gCurrentFps;
 }

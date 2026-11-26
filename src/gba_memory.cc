@@ -403,21 +403,19 @@ namespace
         // Vektor IRQ hardware di 0x00000018: B 0x00000128
         WriteBiosWord(0x0018u, 0xEA000042u);
 
-        // Rutinitas IRQ BIOS GBA di 0x00000128:
+        // Rutinitas IRQ BIOS GBA asli di 0x00000128:
         // STMFD SP!, {R0-R3, R12, LR}
         WriteBiosWord(0x0128u, 0xE92D500Fu);
-        // MOV R0, #0x03000000
-        WriteBiosWord(0x012Cu, 0xE3A00C30u);
-        // ADD R0, R0, #0x7F00
-        WriteBiosWord(0x0130u, 0xE2800C7Fu);
-        // ADD LR, PC, #0  (LR = 0x0000013C)
-        WriteBiosWord(0x0134u, 0xE28FE000u);
-        // LDR PC, [R0, #0xFC] (lompat ke vektor IRQ game di 0x03007FFC)
-        WriteBiosWord(0x0138u, 0xE590F0FCu);
+        // MOV R0, #0x04000000
+        WriteBiosWord(0x012Cu, 0xE3A00301u);
+        // ADD LR, PC, #0  (LR = 0x00000138)
+        WriteBiosWord(0x0130u, 0xE28FE000u);
+        // LDR PC, [R0, #-4] (lompat ke vektor IRQ game di 0x03FFFFFC / 0x03007FFC)
+        WriteBiosWord(0x0134u, 0xE510F004u);
         // LDMFD SP!, {R0-R3, R12, LR}
-        WriteBiosWord(0x013Cu, 0xE8BD500Fu);
+        WriteBiosWord(0x0138u, 0xE8BD500Fu);
         // SUBS PC, LR, #4
-        WriteBiosWord(0x0140u, 0xE25EF004u);
+        WriteBiosWord(0x013Cu, 0xE25EF004u);
     }
 
     void BindPpuCallbacks()
@@ -529,8 +527,7 @@ namespace
         if (gRomSize <= 0)
             return 0;
 
-        // Cerminan ROM pada 0x08000000, 0x0A000000, dan 0x0C000000 (masing-masing 32MB).
-        const TUint32 offset = aAddress & 0x01FFFFFFu;
+        const TUint32 offset = aAddress - KRomBase;
 
         const TInt romOffset = static_cast<TInt>(
             offset % static_cast<TUint32>(gRomSize)
