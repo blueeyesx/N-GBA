@@ -3,6 +3,8 @@
 #include "rom_loader.h"
 #include "arm7tdmi.h"
 #include "gba_memory.h"
+#include "gba_ppu.h"
+#include "gba_screen_view.h"
 
 #include <e32base.h>
 #include <e32std.h>
