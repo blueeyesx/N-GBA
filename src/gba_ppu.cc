@@ -129,17 +129,22 @@ namespace
         }
     }
 
-    void RunCpuCycles(TNgbaCpuState& aCpu, TInt aTargetCycles)
+    
+TInt RunCpuCycles(TNgbaCpuState& aCpu, TInt aTargetCycles)
+{
+    const TUint32 startCycles = aCpu.cycles;
+
+    while (static_cast<TInt>(aCpu.cycles - startCycles) < aTargetCycles)
     {
-        const TUint32 startCycles = aCpu.cycles;
+        const TInt status = NgbaCpuStep(aCpu);
 
-        while (static_cast<TInt>(aCpu.cycles - startCycles) < aTargetCycles)
-        {
-            const TInt status = NgbaCpuStep(aCpu);
+        if (status != ENgbaCpuOk)
+            return status;
+    }
 
-            if (status != ENgbaCpuOk)
-                break;
-        }
+    return ENgbaCpuOk;
+}
+
     }
 
     // ---------------------------------------------------------
