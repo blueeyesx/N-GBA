@@ -1075,6 +1075,15 @@ void DrawMenu(
     const char* diagnostic
 )
 {
+    {
+    if (page == EGamePage) {
+        NgbaScreenViewDraw(
+            gc,
+            TRect(TPoint(0, 0), size)
+        );
+        return;
+    }
+
     if (page == ELogPage) {
         gc.UseFont(font);
 
