@@ -2053,6 +2053,7 @@ TInt RunWindowServer()
         }
     }
 
+    NgbaScreenViewShutdown();
     NgbaReleaseRom();
 
     LogMessage(_L("APPLICATION SHUTDOWN"));
