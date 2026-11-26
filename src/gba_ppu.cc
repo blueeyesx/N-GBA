@@ -751,29 +751,31 @@ TInt RunCpuCycles(TNgbaCpuState& aCpu, TInt aTargetCycles)
                 }
             }
         }
-        else if (bgMode == 4)
-        {
-            if (gPpu.dispCnt & (1u << 10))
-            {
-                const TUint32 frameBase = (gPpu.dispCnt & (1u << 4))
-                    ? (KVramBase + 0xA000u)
-                    : KVramBase;
-                const TUint32 rowAddr =
-                    frameBase + static_cast<TUint32>(aY * KGbaScreenWidth);
+        
+else if (bgMode == 4)
+{
+    if (gPpu.dispCnt & (1u << 10))
+    {
+        const TUint32 frameBase = (gPpu.dispCnt & (1u << 4))
+            ? (KVramBase + 0xA000u)
+            : KVramBase;
 
-                for (TInt x = 0; x < KGbaScreenWidth; ++x)
-                {
-                    const TUint8 idx = NgbaMemoryRead8(
-                        rowAddr + static_cast<TUint32>(x)
-                    );
-                    if (idx != 0)
-                    {
-                        bgLine[2][x] = NgbaMemoryRead16(
-                            KPalRamBase + static_cast<TUint32>(idx) * 2u
-                        ) & 0x7FFFu;
-                    }
-                }
-            }
+        const TUint32 rowAddr =
+            frameBase + static_cast<TUint32>(aY * KGbaScreenWidth);
+
+        for (TInt x = 0; x < KGbaScreenWidth; ++x)
+        {
+            const TUint8 idx = NgbaMemoryRead8(
+                rowAddr + static_cast<TUint32>(x)
+            );
+
+            bgLine[2][x] = NgbaMemoryRead16(
+                KPalRamBase + static_cast<TUint32>(idx) * 2u
+            ) & 0x7FFFu;
+        }
+    }
+}
+
         }
         else if (bgMode == 5)
         {
