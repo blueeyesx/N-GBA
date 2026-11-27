@@ -1902,18 +1902,24 @@ namespace
             }
             else
             {
-                TUint32 value = 0;
+                                TUint32 value = 0;
 
-if (emptyList && i == 15)
-    value = address + 12u;
-else if (i == rn && writeBack && i != firstReg)
-    value = finalBase;
-else if (transferUserBank && i != 15)
-    value = ReadUserRegister(cpu, i);
-else
-    value = ReadRegister(cpu, i, address);
+                if (emptyList && i == 15)
+                    value = address + 12u;
+                else if (i == rn && writeBack && i != firstReg)
+                    value = finalBase;
+                else if (transferUserBank && i != 15)
+                    value = ReadUserRegister(cpu, i);
+                else
+                    value = ReadRegister(cpu, i, address);
 
-NgbaMemoryWrite32(memoryAddress, value);
+                NgbaMemoryWrite32(memoryAddress, value);
+            }
+
+            memoryAddress += 4u;
+        }
+
+        if (writeBack && rn != 15)
         {
             if (!(load && (list & (1u << rn))))
                 cpu.r[rn] = finalBase;
