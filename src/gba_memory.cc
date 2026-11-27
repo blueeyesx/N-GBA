@@ -309,10 +309,21 @@ namespace
 
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
+                if (aAddress >= KIoBase &&
+            aAddress < KIoBase + KIoSize)
         {
             if (IsPpuIoAddress(aAddress))
             {
                 NgbaPpuWriteIo8(aAddress, aValue);
+                return;
+            }
+
+            // REG_IF: Write-1-to-Clear.
+            if (aAddress == 0x04000202u ||
+                aAddress == 0x04000203u)
+            {
+                gIo[aAddress - KIoBase] &=
+                    static_cast<TUint8>(~aValue);
                 return;
             }
 
