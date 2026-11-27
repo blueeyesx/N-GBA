@@ -58,6 +58,12 @@ void NgbaMemoryWrite32(
     TUint32 aAddress,
     TUint32 aValue
 );
+// --------------------------------------------------
+// INTERRUPT & DMA
+// --------------------------------------------------
+
+void NgbaMemoryRaiseIrq(TUint16 aFlag);
+void NgbaMemoryRunDma(TInt aTiming);
 
 // --------------------------------------------------
 // BIOS HLE
