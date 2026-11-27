@@ -677,5 +677,3 @@ void NgbaMemoryRaiseIrq(TUint16 aFlag)
     gIo[0x203] =
         static_cast<TUint8>(updated >> 8);
 }
-    return gReady;
-}
