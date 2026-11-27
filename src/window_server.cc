@@ -1367,17 +1367,6 @@ void ActivateSelected(
             romPath.Copy(KRomFolder);
             romPath.Append(loadedRomName);
             
-            TFileName romPath;
-            romPath.Copy(KRomFolder);
-            romPath.Append(romNames[selected]);
-
-            TBuf<128> loadedRomName;
-            loadedRomName.Copy(romNames[selected]);
-
-            TFileName romPath;
-            romPath.Copy(KRomFolder);
-            romPath.Append(loadedRomName);
-            
             TBuf<128> logEntry;
             logEntry.Copy(_L("ROM LOAD START: "));
             logEntry.Append(romNames[selected]);
