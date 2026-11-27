@@ -468,25 +468,42 @@ TInt NgbaLoadRom(
         return KErrCorrupt;
 
     // Buka ROM dari file menggunakan cache 4 KB.
+        // Buka ROM game pada Memory Bus.
+    WriteConfigLog(_L("DIAG: ROM MEMORY INIT START"));
+
     error = NgbaMemoryInitFile(
         aPath,
         fileSize
     );
 
-    if (error != KErrNone)
+    if (error != KErrNone) {
+        WriteConfigLog(_L("DIAG: ROM MEMORY INIT FAILED"));
         return error;
+    }
 
-    // Uji CPU, lalu kembalikan Memory Bus ke file game.
+    WriteConfigLog(_L("DIAG: ROM MEMORY INIT OK"));
+
+    // Jalankan pengujian CPU.
+    WriteConfigLog(_L("DIAG: CPU SELFTEST START"));
+
     error = NgbaCpuRunSelfTests(
         aPath,
         fileSize
     );
 
+    TBuf<64> selfTestLog;
+    selfTestLog.Copy(_L("DIAG: CPU SELFTEST RESULT: "));
+    selfTestLog.AppendNum(error);
+    WriteConfigLog(selfTestLog);
+
     if (error != KErrNone)
     {
+        WriteConfigLog(_L("DIAG: CPU SELFTEST FAILED"));
         NgbaReleaseRom();
         return error;
     }
+
+    WriteConfigLog(_L("DIAG: CPU SELFTEST OK"));
 
     gRomSize = fileSize;
     gGameCode.Copy(header + 0xAC, 4);
