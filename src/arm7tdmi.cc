@@ -1452,6 +1452,10 @@ namespace
         case 0x0Cu:
             return ExecuteBiosCpuFastSet(cpu);
 
+        case 0x0Du:
+            cpu.r[0] = 0xBAAE187Fu;
+            return ENgbaCpuOk;
+            
         case 0x0Eu:
             return ExecuteBiosBgAffineSet(cpu);
 
