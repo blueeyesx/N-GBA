@@ -1360,6 +1360,13 @@ void ActivateSelected(
 
             cpuActive = EFalse;
 
+            TBuf<128> loadedRomName;
+            loadedRomName.Copy(romNames[selected]);
+
+            TFileName romPath;
+            romPath.Copy(KRomFolder);
+            romPath.Append(loadedRomName);
+            
             TFileName romPath;
             romPath.Copy(KRomFolder);
             romPath.Append(romNames[selected]);
