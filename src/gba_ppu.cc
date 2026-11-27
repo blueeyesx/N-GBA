@@ -8,7 +8,6 @@ namespace
     const TUint32 KRegGreenSwap = 0x04000002u;
     const TUint32 KRegDispStat  = 0x04000004u;
     const TUint32 KRegVCount    = 0x04000006u;
-    const TUint32 KRegIf        = 0x04000202u;
 
     // Alamat basis memori grafis GBA.
     const TUint32 KPalRamBase   = 0x05000000u;
