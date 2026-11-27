@@ -505,19 +505,40 @@ TInt NgbaLoadRom(
 
     WriteConfigLog(_L("DIAG: CPU SELFTEST OK"));
 
-    gRomSize = fileSize;
-    gGameCode.Copy(header + 0xAC, 4);
+WriteConfigLog(_L("DIAG: SET ROM SIZE START"));
 
-    aRomSize = static_cast<TUint32>(gRomSize);
-    aGameCode.Copy(gGameCode);
+gRomSize = fileSize;
 
-    // Baca konfigurasi khusus game.
-    LoadGameConfig();
+WriteConfigLog(_L("DIAG: SET ROM SIZE OK"));
 
-    // Catat hasil pembacaan konfigurasi.
-    LogGameConfigStatus();
+WriteConfigLog(_L("DIAG: COPY GAME CODE START"));
 
-    return KErrNone;
+gGameCode.Copy(header + 0xAC, 4);
+
+WriteConfigLog(_L("DIAG: COPY GAME CODE OK"));
+
+WriteConfigLog(_L("DIAG: OUTPUT ROM INFO START"));
+
+aRomSize = static_cast<TUint32>(gRomSize);
+aGameCode.Copy(gGameCode);
+
+WriteConfigLog(_L("DIAG: OUTPUT ROM INFO OK"));
+
+WriteConfigLog(_L("DIAG: LOAD GAME CONFIG START"));
+
+LoadGameConfig();
+
+WriteConfigLog(_L("DIAG: LOAD GAME CONFIG OK"));
+
+WriteConfigLog(_L("DIAG: CONFIG STATUS START"));
+
+LogGameConfigStatus();
+
+WriteConfigLog(_L("DIAG: CONFIG STATUS OK"));
+
+WriteConfigLog(_L("DIAG: ROM LOAD COMPLETE"));
+
+return KErrNone;
 }
 
 void NgbaGetGameConfig(TNgbaGameConfig& aConfig)
