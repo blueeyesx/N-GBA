@@ -505,40 +505,40 @@ TInt NgbaLoadRom(
 
     WriteConfigLog(_L("DIAG: CPU SELFTEST OK"));
 
-WriteConfigLog(_L("DIAG: SET ROM SIZE START"));
+    WriteConfigLog(_L("DIAG: SET ROM SIZE START"));
 
-gRomSize = fileSize;
+    gRomSize = fileSize;
 
-WriteConfigLog(_L("DIAG: SET ROM SIZE OK"));
+    WriteConfigLog(_L("DIAG: SET ROM SIZE OK"));
 
-WriteConfigLog(_L("DIAG: COPY GAME CODE START"));
+    WriteConfigLog(_L("DIAG: COPY GAME CODE START"));
 
-gGameCode.Copy(header + 0xAC, 4);
+    gGameCode.Copy(header + 0xAC, 4);
 
-WriteConfigLog(_L("DIAG: COPY GAME CODE OK"));
+    WriteConfigLog(_L("DIAG: COPY GAME CODE OK"));
 
-WriteConfigLog(_L("DIAG: OUTPUT ROM INFO START"));
+    WriteConfigLog(_L("DIAG: OUTPUT ROM INFO START"));
 
-aRomSize = static_cast<TUint32>(gRomSize);
-aGameCode.Copy(gGameCode);
+    aRomSize = static_cast<TUint32>(gRomSize);
+    aGameCode.Copy(gGameCode);
 
-WriteConfigLog(_L("DIAG: OUTPUT ROM INFO OK"));
+    WriteConfigLog(_L("DIAG: OUTPUT ROM INFO OK"));
 
-WriteConfigLog(_L("DIAG: LOAD GAME CONFIG START"));
+    WriteConfigLog(_L("DIAG: LOAD GAME CONFIG START"));
 
-LoadGameConfig();
+    LoadGameConfig();
 
-WriteConfigLog(_L("DIAG: LOAD GAME CONFIG OK"));
+    WriteConfigLog(_L("DIAG: LOAD GAME CONFIG OK"));
 
-WriteConfigLog(_L("DIAG: CONFIG STATUS START"));
+    WriteConfigLog(_L("DIAG: CONFIG STATUS START"));
 
-LogGameConfigStatus();
+    LogGameConfigStatus();
 
-WriteConfigLog(_L("DIAG: CONFIG STATUS OK"));
+    WriteConfigLog(_L("DIAG: CONFIG STATUS OK"));
 
-WriteConfigLog(_L("DIAG: ROM LOAD COMPLETE"));
+    WriteConfigLog(_L("DIAG: ROM LOAD COMPLETE"));
 
-return KErrNone;
+    return KErrNone;
 }
 
 void NgbaGetGameConfig(TNgbaGameConfig& aConfig)
