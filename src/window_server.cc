@@ -1851,14 +1851,14 @@ TInt RunWindowServer()
                                                     cpuActive &&
                                                     (oldPage == EGamePage || page != ERomPage)
                                                 ) {
-                                                        StopCpuTimer(
-                                                            cpuTimer,
-                                                            cpuTimerStatus,
-                                                            cpuTimerPending
-                                                        );
+                                                    StopCpuTimer(
+                                                        cpuTimer,
+                                                        cpuTimerStatus,
+                                                        cpuTimerPending
+                                                    );
 
-                                                        cpuActive = EFalse;
-                                                        LogMessage(_L("CPU EXECUTION PAUSED"));
+                                                    cpuActive = EFalse;
+                                                    LogMessage(_L("CPU EXECUTION PAUSED"));
                                                 }
 
                                                 window.Invalidate();
