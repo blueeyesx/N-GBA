@@ -113,22 +113,17 @@ namespace
     }
 
     void RaisePpuIrq(TUint16 aFlag)
+{
+    if (gIrqCallback != NULL)
     {
-        if (gIrqCallback != NULL)
-        {
-            gIrqCallback(aFlag);
-        }
-        else
-        {
-            const TUint16 currentIf = NgbaMemoryRead16(KRegIf);
-            NgbaMemoryWrite16(
-                KRegIf,
-                static_cast<TUint16>(currentIf | aFlag)
-            );
-        }
+        gIrqCallback(aFlag);
     }
+    else
+    {
+        NgbaMemoryRaiseIrq(aFlag);
+    }
+}
 
-    
 TInt RunCpuCycles(TNgbaCpuState& aCpu, TInt aTargetCycles)
 {
     const TUint32 startCycles = aCpu.cycles;
