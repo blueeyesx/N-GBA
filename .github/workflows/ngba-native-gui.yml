@@ -248,6 +248,8 @@ jobs:
               Symbian::Stackless
               Symbian::WindowServer
               Symbian::Gdi
+              Symbian::BitmapGdi
+              Symbian::FontStore
               Symbian::FileServer
           )
           CMAKE
