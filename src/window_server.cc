@@ -1840,6 +1840,7 @@ TInt RunWindowServer()
                                                 key == EKeyBackspace ||
                                                 key == EKeyEscape
                                             ) {
+                                                const TInt oldPage = page;
                                                 GoBack(
                                                     page,
                                                     selected,
