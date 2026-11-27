@@ -274,7 +274,7 @@ namespace
             return;
         }
 
-        TBuf8<4096> data;
+        TBuf8<512> data;
         error = file.Read(data);
 
         file.Close();
