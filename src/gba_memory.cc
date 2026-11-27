@@ -309,8 +309,6 @@ namespace
 
         if (aAddress >= KIoBase &&
             aAddress < KIoBase + KIoSize)
-                if (aAddress >= KIoBase &&
-            aAddress < KIoBase + KIoSize)
         {
             if (IsPpuIoAddress(aAddress))
             {
