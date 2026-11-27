@@ -1815,10 +1815,12 @@ namespace
         const TBool load = (instruction & (1u << 20)) != 0;
 
         const TInt rn = (instruction >> 16) & 15;
-        const TUint32 list = instruction & 0xFFFFu;
+        TUint32 list = instruction & 0xFFFFu;
 
-        if (list == 0)
-            return ENgbaCpuUnsupported;
+        const TBool emptyList = (list == 0);
+
+        if (emptyList)
+            list = (1u << 15);
 
         const TUint32 base = ReadRegister(cpu, rn, address);
 
