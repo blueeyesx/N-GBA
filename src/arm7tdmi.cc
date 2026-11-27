@@ -1826,9 +1826,16 @@ namespace
 
         TInt count = 0;
 
-        for (TInt i = 0; i < 16; ++i)
-            if (list & (1u << i))
-                ++count;
+        if (emptyList)
+        {
+            count = 16;
+        }
+        else
+        {
+            for (TInt i = 0; i < 16; ++i)
+                if (list & (1u << i))
+                    ++count;
+        }
 
         TUint32 memoryAddress = base;
 
