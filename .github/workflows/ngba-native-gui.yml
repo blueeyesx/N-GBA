@@ -1,3 +1,4 @@
+
 name: N-GBA - Nokia E6 Native GUI
 
 on:
@@ -15,6 +16,8 @@ on:
       - "src/gba_memory.h"
       - "src/gba_ppu.cc"
       - "src/gba_ppu.h"
+      - "src/gba_screen_view.cc"
+      - "src/gba_screen_view.h"
       - "src/cpu_selftest.cc"
       - "src/cpu_selftest.h"
       - "src/main.cpp"
@@ -89,6 +92,8 @@ jobs:
             src/gba_memory.h \
             src/gba_ppu.cc \
             src/gba_ppu.h \
+            src/gba_screen_view.h \
+            src/gba_screen_view.cc \
             src/cpu_selftest.cc \
             src/cpu_selftest.h \
             symbian.toml
@@ -157,6 +162,12 @@ jobs:
 
           cp src/gba_ppu.cc \
             "$PROJECT/src/gba_ppu.cc"
+
+          cp src/gba_screen_view.h \
+            "$PROJECT/src/gba_screen_view.h"
+
+          cp src/gba_screen_view.cc \
+            "$PROJECT/src/gba_screen_view.cc"
 
           cp src/cpu_selftest.h \
             "$PROJECT/src/cpu_selftest.h"
@@ -227,6 +238,7 @@ jobs:
               src/arm7tdmi.cc
               src/gba_memory.cc
               src/gba_ppu.cc
+              src/gba_screen_view.cc
               src/cpu_selftest.cc
           )
 
@@ -292,6 +304,8 @@ jobs:
           test -s "$PROJECT/src/gba_memory.cc"
           test -s "$PROJECT/src/gba_ppu.h"
           test -s "$PROJECT/src/gba_ppu.cc"
+          test -s "$PROJECT/src/gba_screen_view.h"
+          test -s "$PROJECT/src/gba_screen_view.cc"
           test -s "$PROJECT/src/cpu_selftest.h"
           test -s "$PROJECT/src/cpu_selftest.cc"
 
@@ -306,6 +320,12 @@ jobs:
           grep -q 'NgbaCpuRunSelfTests' "$PROJECT/src/rom_loader.cc"
           grep -q 'NgbaPpuRunFrame' "$PROJECT/src/gba_ppu.cc"
           grep -q 'NgbaPpuGetFrameBufferRgb555' "$PROJECT/src/gba_ppu.cc"
+
+          grep -q 'NgbaScreenViewInitialize' \
+            "$PROJECT/src/gba_screen_view.cc"
+
+          grep -q 'NgbaScreenViewDraw' \
+            "$PROJECT/src/gba_screen_view.cc"
 
           grep -q 'LoadLanguageMode' \
             "$PROJECT/src/window_server.cc"
