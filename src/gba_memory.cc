@@ -654,7 +654,10 @@ void NgbaMemoryWrite32(
 
 TBool NgbaMemoryReady()
 {
-    void NgbaMemoryRaiseIrq(TUint16 aFlag)
+    return gReady;
+}
+
+void NgbaMemoryRaiseIrq(TUint16 aFlag)
 {
     if (!gReady)
         return;
