@@ -631,52 +631,99 @@ namespace
     }
 
     TInt ExecuteBiosIntrWait(
-        TNgbaCpuState& cpu,
-        TUint32 address,
-        TBool vblankDefault
-    )
+    TNgbaCpuState& cpu,
+    TUint32 address,
+    TBool vblankDefault
+)
+{
+    if (gBank.intrWaitMask == 0)
     {
-        if (gBank.intrWaitMask == 0)
+        const TBool discardOld = vblankDefault
+            ? ETrue
+            : (cpu.r[0] != 0);
+
+        const TUint16 mask = vblankDefault
+            ? 0x0001u
+            : static_cast<TUint16>(cpu.r[1] & 0xFFFFu);
+
+        if (mask == 0)
+            return ENgbaCpuOk;
+
+        if (discardOld)
         {
-            const TBool discardOld = vblankDefault
-                ? ETrue
-                : (cpu.r[0] != 0);
+            const TUint16 biosIf =
+                NgbaMemoryRead16(0x03007FF8u);
 
-            const TUint16 mask = vblankDefault
-                ? 0x0001u
-                : static_cast<TUint16>(cpu.r[1] & 0xFFFFu);
-
-            if (mask == 0)
-                return ENgbaCpuOk;
-
-            if (discardOld)
-            {
-                const TUint16 biosIf = NgbaMemoryRead16(0x03007FF8u);
-                NgbaMemoryWrite16(
-                    0x03007FF8u,
-                    static_cast<TUint16>(biosIf & ~mask)
-                );
-            }
-
-            gBank.intrWaitMask = mask;
-        }
-
-        const TUint16 biosIf = NgbaMemoryRead16(0x03007FF8u);
-
-        if ((biosIf & gBank.intrWaitMask) != 0)
-        {
             NgbaMemoryWrite16(
                 0x03007FF8u,
-                static_cast<TUint16>(biosIf & ~gBank.intrWaitMask)
+                static_cast<TUint16>(biosIf & ~mask)
             );
+
+            // Buang IRQ hardware lama yang termasuk mask.
+            const TUint16 oldHardwarePending =
+                NgbaMemoryRead16(0x04000200u) &
+                NgbaMemoryRead16(0x04000202u) &
+                mask;
+
+            if (oldHardwarePending != 0)
+            {
+                NgbaMemoryWrite16(
+                    0x04000202u,
+                    oldHardwarePending
+                );
+            }
+        }
+
+        gBank.intrWaitMask = mask;
+    }
+
+    const TUint16 biosIf =
+        NgbaMemoryRead16(0x03007FF8u);
+
+    if ((biosIf & gBank.intrWaitMask) != 0)
+    {
+        NgbaMemoryWrite16(
+            0x03007FF8u,
+            static_cast<TUint16>(
+                biosIf & ~gBank.intrWaitMask
+            )
+        );
+
+        gBank.intrWaitMask = 0;
+        return ENgbaCpuOk;
+    }
+
+    // HLE fallback: jika game belum memasang IRQ handler,
+    // gunakan IRQ hardware yang cocok dengan mask IntrWait.
+    const TUint32 isrHandler =
+        NgbaMemoryRead32(0x03007FFCu);
+
+    if (isrHandler == 0)
+    {
+        const TUint16 hardwarePending =
+            NgbaMemoryRead16(0x04000200u) &
+            NgbaMemoryRead16(0x04000202u) &
+            gBank.intrWaitMask;
+
+        if (hardwarePending != 0)
+        {
+            // REG_IF menggunakan Write-1-to-Clear.
+            NgbaMemoryWrite16(
+                0x04000202u,
+                hardwarePending
+            );
+
             gBank.intrWaitMask = 0;
             return ENgbaCpuOk;
         }
-
-        cpu.r[15] = address;
-        cpu.halted = ETrue;
-        return ENgbaCpuOk;
     }
+
+    cpu.r[15] = address;
+    cpu.halted = ETrue;
+
+    return ENgbaCpuOk;
+}
+
 
     TInt ExecuteBiosDiv(TNgbaCpuState& cpu, TBool armOrder)
     {
