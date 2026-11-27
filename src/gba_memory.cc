@@ -654,5 +654,25 @@ void NgbaMemoryWrite32(
 
 TBool NgbaMemoryReady()
 {
+    void NgbaMemoryRaiseIrq(TUint16 aFlag)
+{
+    if (!gReady)
+        return;
+
+    const TUint16 currentIf =
+        static_cast<TUint16>(
+            gIo[0x202] |
+            (static_cast<TUint16>(gIo[0x203]) << 8)
+        );
+
+    const TUint16 updated =
+        static_cast<TUint16>(currentIf | aFlag);
+
+    gIo[0x202] =
+        static_cast<TUint8>(updated & 0xFFu);
+
+    gIo[0x203] =
+        static_cast<TUint8>(updated >> 8);
+}
     return gReady;
 }
