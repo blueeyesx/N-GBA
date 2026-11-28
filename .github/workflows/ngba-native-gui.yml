@@ -219,6 +219,40 @@ jobs:
 
           echo "TRAPD removal verified."
 
+      - name: Patch memcmp for Symbian SDK
+        shell: bash
+        run: |
+          set -e
+
+          python - "$PROJECT/src/gba_memory.cc" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          content = path.read_text(encoding="utf-8")
+
+          patch = """#ifndef memcmp
+          #define memcmp(a, b, n) \\
+              Mem::Compare(reinterpret_cast<const TUint8*>(a), static_cast<TInt>(n), \\
+                           reinterpret_cast<const TUint8*>(b), static_cast<TInt>(n))
+          #endif
+
+          """
+
+          if "Mem::Compare" not in content:
+              marker = '#include <e32std.h>\n'
+              if marker in content:
+                  content = content.replace(marker, marker + patch, 1)
+              else:
+                  content = '#include <e32std.h>\n' + patch + content
+              path.write_text(content, encoding="utf-8")
+
+          print("Patched memcmp() in gba_memory.cc.")
+          PY
+
+          grep -q 'Mem::Compare' "$PROJECT/src/gba_memory.cc"
+          echo "memcmp compatibility patch verified."
+
       - name: Configure CMake
         shell: bash
         run: |
