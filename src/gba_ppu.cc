@@ -1051,10 +1051,44 @@ TUint16 NgbaPpuReadIo16(TUint32 aAddress)
     case 0x0400000Au:   return gPpu.bgCnt[1];
     case 0x0400000Cu:   return gPpu.bgCnt[2];
     case 0x0400000Eu:   return gPpu.bgCnt[3];
+
+    case 0x04000010u:   return gPpu.bgHOfs[0];
+    case 0x04000012u:   return gPpu.bgVOfs[0];
+    case 0x04000014u:   return gPpu.bgHOfs[1];
+    case 0x04000016u:   return gPpu.bgVOfs[1];
+    case 0x04000018u:   return gPpu.bgHOfs[2];
+    case 0x0400001Au:   return gPpu.bgVOfs[2];
+    case 0x0400001Cu:   return gPpu.bgHOfs[3];
+    case 0x0400001Eu:   return gPpu.bgVOfs[3];
+
+    case 0x04000020u:   return static_cast<TUint16>(gPpu.bgPa[0]);
+    case 0x04000022u:   return static_cast<TUint16>(gPpu.bgPb[0]);
+    case 0x04000024u:   return static_cast<TUint16>(gPpu.bgPc[0]);
+    case 0x04000026u:   return static_cast<TUint16>(gPpu.bgPd[0]);
+    case 0x04000028u:   return static_cast<TUint16>(gPpu.bgAffX[0]);
+    case 0x0400002Au:   return static_cast<TUint16>(static_cast<TUint32>(gPpu.bgAffX[0]) >> 16);
+    case 0x0400002Cu:   return static_cast<TUint16>(gPpu.bgAffY[0]);
+    case 0x0400002Eu:   return static_cast<TUint16>(static_cast<TUint32>(gPpu.bgAffY[0]) >> 16);
+
+    case 0x04000030u:   return static_cast<TUint16>(gPpu.bgPa[1]);
+    case 0x04000032u:   return static_cast<TUint16>(gPpu.bgPb[1]);
+    case 0x04000034u:   return static_cast<TUint16>(gPpu.bgPc[1]);
+    case 0x04000036u:   return static_cast<TUint16>(gPpu.bgPd[1]);
+    case 0x04000038u:   return static_cast<TUint16>(gPpu.bgAffX[1]);
+    case 0x0400003Au:   return static_cast<TUint16>(static_cast<TUint32>(gPpu.bgAffX[1]) >> 16);
+    case 0x0400003Cu:   return static_cast<TUint16>(gPpu.bgAffY[1]);
+    case 0x0400003Eu:   return static_cast<TUint16>(static_cast<TUint32>(gPpu.bgAffY[1]) >> 16);
+
+    case 0x04000040u:   return gPpu.win0H;
+    case 0x04000042u:   return gPpu.win1H;
+    case 0x04000044u:   return gPpu.win0V;
+    case 0x04000046u:   return gPpu.win1V;
     case 0x04000048u:   return gPpu.winIn;
     case 0x0400004Au:   return gPpu.winOut;
+    case 0x0400004Cu:   return gPpu.mosaic;
     case 0x04000050u:   return gPpu.bldCnt;
     case 0x04000052u:   return gPpu.bldAlpha;
+    case 0x04000054u:   return gPpu.bldY;
     default:            return 0;
     }
 }
