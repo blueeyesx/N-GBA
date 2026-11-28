@@ -79,6 +79,7 @@ namespace
     TNgbaPpuIrqCallback   gIrqCallback    = NULL;
     TNgbaPpuEventCallback gVBlankCallback = NULL;
     TNgbaPpuEventCallback gHBlankCallback = NULL;
+    TBool gRenderEnabled = ETrue;
 
     // Tabel ukuran sprite [shape][size] -> lebar & tinggi dalam piksel.
     const TInt KObjWidthTable[3][4] =
@@ -1263,7 +1264,8 @@ TInt NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 
         if (line < KVisibleLines)
         {
-            RenderScanlineInternal(line);
+            if (gRenderEnabled)
+                RenderScanlineInternal(line);
 
             gPpu.internalX[0] += gPpu.bgPb[0];
             gPpu.internalY[0] += gPpu.bgPd[0];
@@ -1298,6 +1300,11 @@ TInt NgbaPpuRunFrame(TNgbaCpuState& aCpu)
 const TUint16* NgbaPpuGetFrameBufferRgb555()
 {
     return gPpu.frameBuffer;
+}
+
+void NgbaPpuSetRenderEnabled(TBool aEnabled)
+{
+    gRenderEnabled = aEnabled;
 }
 
 TUint16 NgbaPpuGetDispCnt()

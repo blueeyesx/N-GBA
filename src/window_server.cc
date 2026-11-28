@@ -31,6 +31,8 @@ const TInt KFrameMicroSeconds = 16743;
 TUint16 gGameKeyMask = 0;
 TUint16 gGameTouchMask = 0;
 TUint32 gFrameCount = 0;
+TInt gSkipStreak = 0;     // jumlah frame beruntun yang tidak digambar
+TBool gSkipNext = EFalse; // frame berikutnya tidak digambar (terlalu lambat)
 
 // Pemetaan scan code keyboard Nokia (E6 QWERTY / D-pad) ke tombol GBA.
 TUint16 GameKeyFromScanCode(TInt aScanCode)
@@ -70,6 +72,20 @@ void UpdateGameStatus(const TNgbaCpuState& aCpu)
     }
 
     NgbaScreenViewSetStatus(text);
+
+    // Baris kedua: IE, IF, IME, CPSR (membantu mencari penyebab layar putih).
+    TBuf<64> text2;
+
+    text2.Copy(_L("IE:"));
+    text2.AppendNumFixedWidthUC(NgbaMemoryRead16(0x04000200u), EHex, 4);
+    text2.Append(_L(" IF:"));
+    text2.AppendNumFixedWidthUC(NgbaMemoryRead16(0x04000202u), EHex, 4);
+    text2.Append(_L(" IME:"));
+    text2.AppendNum(static_cast<TInt>(NgbaMemoryRead16(0x04000208u) & 1u));
+    text2.Append(_L(" CP:"));
+    text2.AppendNumFixedWidthUC(aCpu.cpsr, EHex, 8);
+
+    NgbaScreenViewSetStatus2(text2);
 }
 
 void SetStopStatus(const TNgbaCpuState& aCpu, TInt aResult)
@@ -2010,6 +2026,7 @@ TInt RunWindowServer()
                                                 gGameKeyMask = 0;
                                                 gGameTouchMask = 0;
                                                 NgbaMemorySetKeys(0);
+                                                NgbaMemoryFlushSave();
 
                                                 const TInt oldPage = page;
                                                 GoBack(
@@ -2073,18 +2090,42 @@ TInt RunWindowServer()
                                                 TTime frameStart;
                                                 frameStart.UniversalTime();
 
+                                                // Frame skip otomatis: bila emulasi lebih lambat dari
+                                                // 59.7 fps, frame ini tidak digambar (maks 2 beruntun).
+                                                const TBool drawThisFrame = !gSkipNext;
+                                                NgbaPpuSetRenderEnabled(drawThisFrame);
+
                                                 const TInt stepResult = NgbaPpuRunFrame(cpu);
 
                                                 TTime frameEnd;
                                                 frameEnd.UniversalTime();
 
-                                                TInt frameDelay =
-                                                    KFrameMicroSeconds -
+                                                const TInt frameElapsed =
                                                     I64INT(
                                                         frameEnd.MicroSecondsFrom(
                                                             frameStart
                                                         ).Int64()
                                                     );
+
+                                                TInt frameDelay =
+                                                    KFrameMicroSeconds - frameElapsed;
+
+                                                if (drawThisFrame) {
+                                                    gSkipStreak = 0;
+                                                    gSkipNext =
+                                                        frameElapsed > KFrameMicroSeconds;
+                                                }
+                                                else {
+                                                    ++gSkipStreak;
+                                                    gSkipNext =
+                                                        (gSkipStreak < 2) &&
+                                                        (frameElapsed > KFrameMicroSeconds / 2);
+                                                }
+
+                                                // Simpan file .sav kira-kira tiap 5 detik bila berubah.
+                                                if ((gFrameCount % 300) == 299) {
+                                                    NgbaMemoryFlushSave();
+                                                }
 
                                                 if (frameDelay < 1000) {
                                                     frameDelay = 1000;
@@ -2159,8 +2200,11 @@ TInt RunWindowServer()
 
                                                       cpuTimerPending = ETrue;
 
-                                                      // Perbarui tampilan framebuffer.
-                                                      window.Invalidate();
+                                                      // Perbarui tampilan framebuffer
+                                                      // (kecuali frame yang dilewati).
+                                                      if (drawThisFrame) {
+                                                          window.Invalidate();
+                                                      }
                                                    }
                                                 }
                                     }

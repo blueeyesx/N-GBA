@@ -104,6 +104,13 @@ void NgbaMemorySetKeys(TUint16 aPressedMask);
 // Mengembalikan ETrue sekali jika game menulis HALTCNT.
 TBool NgbaMemoryTakeHaltRequest();
 
+// Tipe save: 0 = SRAM, 1 = Flash 64K, 2 = Flash 128K, 3 = EEPROM.
+// (Biasanya terdeteksi otomatis dari ROM.)
+void NgbaMemorySetSaveType(TInt aType);
+
+// Menulis file .sav (di samping ROM) bila data save berubah.
+void NgbaMemoryFlushSave();
+
 // Memajukan timer GBA sebanyak aCycles siklus CPU.
 void NgbaMemoryTickTimers(TInt aCycles);
 

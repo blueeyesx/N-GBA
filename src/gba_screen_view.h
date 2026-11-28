@@ -55,4 +55,7 @@ TUint16 NgbaScreenViewHitTest(
 // Teks status satu baris yang ditampilkan di area kontrol.
 void NgbaScreenViewSetStatus(const TDesC& aText);
 
+// Teks status baris kedua (IE/IF/IME/CPSR).
+void NgbaScreenViewSetStatus2(const TDesC& aText);
+
 #endif

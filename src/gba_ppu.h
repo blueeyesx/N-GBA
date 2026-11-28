@@ -34,6 +34,9 @@ void NgbaPpuRenderLine(TInt aLine);
 
 const TUint16* NgbaPpuGetFrameBufferRgb555();
 
+// Mematikan render scanline (frame skip) tanpa menghentikan emulasi.
+void NgbaPpuSetRenderEnabled(TBool aEnabled);
+
 // Nilai register DISPCNT saat ini (untuk diagnosa di layar).
 TUint16 NgbaPpuGetDispCnt();
 

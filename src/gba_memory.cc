@@ -39,7 +39,36 @@ namespace
     TUint8 gPalette[KPaletteSize];
     TUint8 gVram[KVramSize];
     TUint8 gOam[KOamSize];
-    TUint8 gSram[KSramSize];
+    // ------------------------------------------------------------
+    // PENYIMPANAN CARTRIDGE (SRAM / Flash 64K / Flash 128K / EEPROM)
+    // ------------------------------------------------------------
+    const TInt KSaveBytes = 0x20000;
+
+    enum
+    {
+        ESaveSram = 0,
+        ESaveFlash64,
+        ESaveFlash128,
+        ESaveEeprom
+    };
+
+    TUint8 gSave[KSaveBytes];
+    TInt gSaveType = ESaveSram;
+    TBool gSaveDirty = EFalse;
+    TBool gSavePathValid = EFalse;
+    TFileName gSavePath;
+
+    // Mesin status Flash.
+    TInt gFlashState = 0;
+    TBool gFlashIdMode = EFalse;
+    TBool gFlashEraseArmed = EFalse;
+    TBool gFlashProgramNext = EFalse;
+    TBool gFlashBankNext = EFalse;
+    TInt gFlashBank = 0;
+
+    // EEPROM (diakses lewat DMA3 ke 0x0D000000).
+    TInt gEepromAddrBits = 14;
+    TUint32 gEepromReadAddr = 0;
 
     const TUint8* gRom = NULL;
 
@@ -103,7 +132,19 @@ namespace
         Mem::FillZ(gPalette, sizeof(gPalette));
         Mem::FillZ(gVram, sizeof(gVram));
         Mem::FillZ(gOam, sizeof(gOam));
-        Mem::FillZ(gSram, sizeof(gSram));
+        // Flash dan EEPROM kosong bernilai 0xFF.
+        memset(gSave, 0xFF, sizeof(gSave));
+        gSaveType = ESaveSram;
+        gSaveDirty = EFalse;
+        gSavePathValid = EFalse;
+        gFlashState = 0;
+        gFlashIdMode = EFalse;
+        gFlashEraseArmed = EFalse;
+        gFlashProgramNext = EFalse;
+        gFlashBankNext = EFalse;
+        gFlashBank = 0;
+        gEepromAddrBits = 14;
+        gEepromReadAddr = 0;
 
         // KEYINPUT: aktif-rendah, 0x03FF = tidak ada tombol ditekan.
         gIo[0x130] = 0xFF;
@@ -226,6 +267,354 @@ namespace
     }
 
     // -----------------------------------------------------
+    // FLASH / SRAM / EEPROM
+    // -----------------------------------------------------
+
+    TInt SaveFileSize()
+    {
+        switch (gSaveType)
+        {
+        case ESaveFlash64:  return 0x10000;
+        case ESaveFlash128: return 0x20000;
+        case ESaveEeprom:   return (gEepromAddrBits == 6) ? 0x200 : 0x2000;
+        default:            return 0x8000;
+        }
+    }
+
+    TUint8 ReadSave(TUint32 aOffset)
+    {
+        if (gSaveType == ESaveFlash64 || gSaveType == ESaveFlash128)
+        {
+            const TUint32 a = aOffset & 0xFFFFu;
+
+            if (gFlashIdMode)
+            {
+                if (a == 0)
+                    return 0xC2;    // Macronix
+
+                if (a == 1)
+                    return (gSaveType == ESaveFlash128) ? 0x09 : 0x1C;
+            }
+
+            return gSave[(gFlashBank * 0x10000 + a) & (KSaveBytes - 1)];
+        }
+
+        return gSave[aOffset & 0x7FFFu];
+    }
+
+    void FlashWrite(TUint32 aAddr, TUint8 aValue)
+    {
+        const TInt chipSize =
+            (gSaveType == ESaveFlash128) ? 0x20000 : 0x10000;
+
+        if (gFlashProgramNext)
+        {
+            gSave[(gFlashBank * 0x10000 + aAddr) & (KSaveBytes - 1)] &=
+                aValue;
+            gFlashProgramNext = EFalse;
+            gSaveDirty = ETrue;
+            return;
+        }
+
+        if (gFlashBankNext && aAddr == 0)
+        {
+            gFlashBank = aValue & 1;
+            gFlashBankNext = EFalse;
+            return;
+        }
+
+        if (gFlashState == 0)
+        {
+            if (aAddr == 0x5555u && aValue == 0xAA)
+                gFlashState = 1;
+            else if (aValue == 0xF0)
+                gFlashIdMode = EFalse;
+
+            return;
+        }
+
+        if (gFlashState == 1)
+        {
+            gFlashState = (aAddr == 0x2AAAu && aValue == 0x55) ? 2 : 0;
+            return;
+        }
+
+        // gFlashState == 2: byte perintah.
+        gFlashState = 0;
+
+        if (gFlashEraseArmed)
+        {
+            gFlashEraseArmed = EFalse;
+
+            if (aAddr == 0x5555u && aValue == 0x10)
+            {
+                memset(gSave, 0xFF, chipSize);
+                gSaveDirty = ETrue;
+            }
+            else if (aValue == 0x30)
+            {
+                const TInt base =
+                    (gFlashBank * 0x10000 + (aAddr & 0xF000u)) &
+                    (KSaveBytes - 1);
+                memset(gSave + base, 0xFF, 0x1000);
+                gSaveDirty = ETrue;
+            }
+
+            return;
+        }
+
+        if (aAddr != 0x5555u)
+            return;
+
+        switch (aValue)
+        {
+        case 0x90: gFlashIdMode = ETrue; break;
+        case 0xF0: gFlashIdMode = EFalse; break;
+        case 0x80: gFlashEraseArmed = ETrue; break;
+        case 0xA0: gFlashProgramNext = ETrue; break;
+        case 0xB0:
+            if (gSaveType == ESaveFlash128)
+                gFlashBankNext = ETrue;
+            break;
+        default: break;
+        }
+    }
+
+    void WriteSave(TUint32 aOffset, TUint8 aValue)
+    {
+        if (gSaveType == ESaveFlash64 || gSaveType == ESaveFlash128)
+        {
+            FlashWrite(aOffset & 0xFFFFu, aValue);
+            return;
+        }
+
+        gSave[aOffset & 0x7FFFu] = aValue;
+        gSaveDirty = ETrue;
+    }
+
+    TBool EepromActive()
+    {
+        return gSaveType == ESaveEeprom &&
+               gRomSize <= 0x01000000;
+    }
+
+    void EepromProcess(const TUint8* aBits, TUint32 aCount)
+    {
+        TInt addrBits = 0;
+
+        if (aCount == 9 || aCount == 73)
+            addrBits = 6;
+        else if (aCount == 17 || aCount == 81)
+            addrBits = 14;
+        else
+            return;
+
+        gEepromAddrBits = addrBits;
+
+        const TUint32 cmd = (static_cast<TUint32>(aBits[0]) << 1) | aBits[1];
+
+        TUint32 addr = 0;
+
+        for (TInt i = 0; i < addrBits; ++i)
+            addr = (addr << 1) | aBits[2 + i];
+
+        if (cmd == 3)
+        {
+            gEepromReadAddr = addr;
+        }
+        else if (cmd == 2 && (aCount == 73 || aCount == 81))
+        {
+            for (TInt j = 0; j < 8; ++j)
+            {
+                TUint32 v = 0;
+
+                for (TInt k = 0; k < 8; ++k)
+                    v = (v << 1) | aBits[2 + addrBits + j * 8 + k];
+
+                gSave[(addr * 8 + j) & 0x1FFFu] = static_cast<TUint8>(v);
+            }
+
+            gSaveDirty = ETrue;
+        }
+    }
+
+    // Menangani DMA3 yang menuju/berasal dari area EEPROM. Mengembalikan
+    // ETrue jika DMA sudah ditangani seluruhnya.
+    TBool EepromDma(TUint32& aSrc, TUint32& aDst, TUint32 aCount)
+    {
+        if (!EepromActive())
+            return EFalse;
+
+        if ((aDst >> 24) == 0x0Du)
+        {
+            TUint8 bits[96];
+            const TUint32 n = (aCount < 96u) ? aCount : 96u;
+
+            for (TUint32 i = 0; i < n; ++i)
+                bits[i] = static_cast<TUint8>(
+                    NgbaMemoryRead16(aSrc + i * 2u) & 1u
+                );
+
+            aSrc += aCount * 2u;
+            EepromProcess(bits, n);
+            return ETrue;
+        }
+
+        if ((aSrc >> 24) == 0x0Du)
+        {
+            for (TUint32 i = 0; i < aCount; ++i)
+            {
+                TUint16 bit = 0;
+
+                if (i >= 4u && (i - 4u) < 64u)
+                {
+                    const TUint32 b = i - 4u;
+                    const TUint8 byte = gSave[
+                        (gEepromReadAddr * 8u + (b >> 3)) & 0x1FFFu
+                    ];
+                    bit = static_cast<TUint16>((byte >> (7u - (b & 7u))) & 1u);
+                }
+
+                NgbaMemoryWrite16(aDst + i * 2u, bit);
+            }
+
+            aDst += aCount * 2u;
+            return ETrue;
+        }
+
+        return EFalse;
+    }
+
+    // Mencari penanda library save pada ROM (EEPROM_V, FLASH1M_V, ...).
+    TUint8 gScanBuffer[0x10000 + 16];
+
+    void DetectSaveType()
+    {
+        gSaveType = ESaveSram;
+
+        TInt carry = 0;
+        TInt pos = 0;
+        TBool sawSram = EFalse;
+
+        while (pos < gRomSize)
+        {
+            TInt want = gRomSize - pos;
+
+            if (want > 0x10000)
+                want = 0x10000;
+
+            TPtr8 des(gScanBuffer + carry, 0, 0x10000);
+
+            if (gRomFile.Read(pos, des, want) != KErrNone ||
+                des.Length() <= 0)
+                break;
+
+            const TInt n = carry + des.Length();
+
+            for (TInt i = 0; i < n; ++i)
+            {
+                const TUint8 c = gScanBuffer[i];
+                const TUint8* t = gScanBuffer + i;
+                const TInt left = n - i;
+
+                if (c == 'F' && left >= 9 &&
+                    memcmp(t, "FLASH1M_V", 9) == 0)
+                {
+                    gSaveType = ESaveFlash128;
+                    return;
+                }
+
+                if (c == 'F' && left >= 10 &&
+                    memcmp(t, "FLASH512_V", 10) == 0)
+                {
+                    gSaveType = ESaveFlash64;
+                    return;
+                }
+
+                if (c == 'F' && left >= 7 &&
+                    memcmp(t, "FLASH_V", 7) == 0)
+                {
+                    gSaveType = ESaveFlash64;
+                    return;
+                }
+
+                if (c == 'E' && left >= 8 &&
+                    memcmp(t, "EEPROM_V", 8) == 0)
+                {
+                    gSaveType = ESaveEeprom;
+                    return;
+                }
+
+                if (c == 'S' && left >= 6 &&
+                    memcmp(t, "SRAM_V", 6) == 0)
+                    sawSram = ETrue;
+            }
+
+            // Sisakan 15 byte terakhir agar penanda di batas blok terbaca.
+            carry = (n >= 15) ? 15 : n;
+            memmove(gScanBuffer, gScanBuffer + n - carry, carry);
+            pos += des.Length();
+        }
+
+        (void)sawSram;
+    }
+
+    void BuildSavePath(const TDesC& aRomPath)
+    {
+        gSavePathValid = EFalse;
+
+        if (aRomPath.Length() + 4 > gSavePath.MaxLength())
+            return;
+
+        gSavePath.Copy(aRomPath);
+
+        const TInt dot = gSavePath.LocateReverse('.');
+
+        if (dot >= 0)
+            gSavePath.SetLength(dot);
+
+        if (gSavePath.Length() + 4 > gSavePath.MaxLength())
+            return;
+
+        gSavePath.Append(_L(".sav"));
+        gSavePathValid = ETrue;
+    }
+
+    void LoadSaveFile()
+    {
+        if (!gSavePathValid)
+            return;
+
+        RFile file;
+
+        if (file.Open(gRomFs, gSavePath, EFileRead | EFileShareReadersOnly)
+            != KErrNone)
+            return;
+
+        TPtr8 des(gSave, 0, KSaveBytes);
+        file.Read(0, des, SaveFileSize());
+        file.Close();
+    }
+
+    void FlushSaveFile()
+    {
+        if (!gSavePathValid || !gSaveDirty || !gRomFileOpen)
+            return;
+
+        RFile file;
+
+        if (file.Replace(gRomFs, gSavePath, EFileWrite) != KErrNone)
+            return;
+
+        TPtrC8 data(gSave, SaveFileSize());
+
+        if (file.Write(data) == KErrNone)
+            gSaveDirty = EFalse;
+
+        file.Close();
+    }
+
+    // -----------------------------------------------------
     // DMA
     // -----------------------------------------------------
 
@@ -300,7 +689,12 @@ namespace
         src &= word ? ~3u : ~1u;
         dst &= word ? ~3u : ~1u;
 
-        for (TUint32 n = 0; n < count; ++n)
+        TUint32 loopCount = count;
+
+        if (aChannel == 3 && !word && EepromDma(src, dst, count))
+            loopCount = 0;
+
+        for (TUint32 n = 0; n < loopCount; ++n)
         {
             if (word)
                 NgbaMemoryWrite32(dst, NgbaMemoryRead32(src));
@@ -382,6 +776,52 @@ namespace
         }
 
         gTimerEnabled[aTimer] = enable;
+    }
+
+    // Baca 16/32-bit langsung dari ROM (RAM atau cache file) tanpa
+    // memanggil ReadMemoryByte per byte. Mengembalikan EFalse jika harus
+    // memakai jalur lambat (blok belum ada di cache, dsb).
+    inline TBool RomFastRead(TUint32 aAddress, TInt aBytes, TUint32& aOut)
+    {
+        if (gRomSize <= 0)
+            return EFalse;
+
+        TUint32 off = aAddress - KRomBase;
+
+        if (off >= static_cast<TUint32>(gRomSize))
+            off %= static_cast<TUint32>(gRomSize);
+
+        if (off + static_cast<TUint32>(aBytes) >
+            static_cast<TUint32>(gRomSize))
+            return EFalse;
+
+        const TUint8* p;
+
+        if (gRom != NULL)
+        {
+            p = gRom + off;
+        }
+        else
+        {
+            const TInt block = static_cast<TInt>(off) / KRomCacheSize;
+            const TInt slot = block % KRomCacheSlots;
+            const TInt inBlock = static_cast<TInt>(off) - block * KRomCacheSize;
+
+            if (gRomCacheTag[slot] != block ||
+                inBlock + aBytes > gRomCacheLen[slot])
+                return EFalse;
+
+            p = &gRomCache[slot][inBlock];
+        }
+
+        aOut = (aBytes == 2)
+            ? static_cast<TUint32>(p[0] | (p[1] << 8))
+            : (static_cast<TUint32>(p[0]) |
+               (static_cast<TUint32>(p[1]) << 8) |
+               (static_cast<TUint32>(p[2]) << 16) |
+               (static_cast<TUint32>(p[3]) << 24));
+
+        return ETrue;
     }
 
     TUint8 ReadMemoryByte(TUint32 aAddress)
@@ -472,17 +912,17 @@ namespace
         if (aAddress >= KRomBase &&
             aAddress < 0x0E000000u)
         {
+            // EEPROM selalu "siap" (bit 0 = 1) saat dipoll CPU.
+            if ((aAddress >> 24) == 0x0Du && EepromActive())
+                return (aAddress & 1u) ? 0 : 1;
+
             return ReadRom(aAddress);
         }
 
         if (aAddress >= KSramBase &&
             aAddress < KSramBase + 0x01000000u)
         {
-            return ReadArray(
-                gSram,
-                KSramSize,
-                aAddress - KSramBase
-            );
+            return ReadSave(aAddress - KSramBase);
         }
 
         return 0;
@@ -545,9 +985,12 @@ namespace
             gIo[ioOffset] = aValue;
 
             // HALTCNT: bit 7 = 0 -> Halt sampai ada IRQ.
+            // (bit 7 = 1 adalah mode Stop; diabaikan.)
             if (ioOffset == 0x301u)
             {
-                gHaltRequest = ETrue;
+                if ((aValue & 0x80u) == 0)
+                    gHaltRequest = ETrue;
+
                 return;
             }
 
@@ -615,12 +1058,7 @@ namespace
         if (aAddress >= KSramBase &&
             aAddress < KSramBase + 0x01000000u)
         {
-            WriteArray(
-                gSram,
-                KSramSize,
-                aAddress - KSramBase,
-                aValue
-            );
+            WriteSave(aAddress - KSramBase, aValue);
         }
     }
 }
@@ -702,14 +1140,32 @@ TInt NgbaMemoryInitFile(
 
     FlushRomCache();
 
+    // Tipe save (SRAM/Flash/EEPROM) dideteksi dari ROM, lalu muat file .sav.
+    DetectSaveType();
+    BuildSavePath(aPath);
+    LoadSaveFile();
+
     gReady = ETrue;
 
     return KErrNone;
 }
 
+void NgbaMemorySetSaveType(TInt aType)
+{
+    if (aType >= ESaveSram && aType <= ESaveEeprom)
+        gSaveType = aType;
+}
+
+void NgbaMemoryFlushSave()
+{
+    FlushSaveFile();
+}
+
 void NgbaMemoryShutdown()
 {
     gReady = EFalse;
+
+    FlushSaveFile();
 
     CloseRomFile();
 
@@ -819,6 +1275,20 @@ TUint16 NgbaMemoryRead16(TUint32 aAddress)
             o = aAddress & (KOamSize - 1);
             return static_cast<TUint16>(gOam[o] | (gOam[o + 1] << 8));
 
+        case 0x08:
+        case 0x09:
+        case 0x0A:
+        case 0x0B:
+        case 0x0C:
+        {
+            TUint32 v;
+
+            if (RomFastRead(aAddress, 2, v))
+                return static_cast<TUint16>(v);
+
+            break;
+        }
+
         default:
             break;
         }
@@ -862,6 +1332,20 @@ TUint32 NgbaMemoryRead32(TUint32 aAddress)
                    (static_cast<TUint32>(gIwram[o + 1]) << 8) |
                    (static_cast<TUint32>(gIwram[o + 2]) << 16) |
                    (static_cast<TUint32>(gIwram[o + 3]) << 24);
+
+        case 0x08:
+        case 0x09:
+        case 0x0A:
+        case 0x0B:
+        case 0x0C:
+        {
+            TUint32 v;
+
+            if (RomFastRead(aAddress, 4, v))
+                return v;
+
+            break;
+        }
 
         default:
             break;

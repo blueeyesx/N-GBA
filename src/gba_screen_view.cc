@@ -10,6 +10,12 @@ namespace
     TInt gInitError = KErrNotReady;
 
     TBuf<64> gStatus;
+    TBuf<64> gStatus2;
+
+    // Posisi teks status (dihitung ulang oleh BuildControls).
+    TInt gStatusX = 6;
+    TInt gStatusY1 = 0;
+    TInt gStatusY2 = 0;
 
     // Tinggi minimum area kontrol agar tombol layar ditampilkan.
     const TInt KMinControlsHeight = 110;
@@ -105,6 +111,8 @@ namespace
 
         TInt n = 0;
 
+        const TBool compact = (h < 200);
+
         // Baris bahu (L, R, MENU).
         const TInt sh = MaxI(h / 7, 30);
         const TInt shW = w / 4;
@@ -167,7 +175,23 @@ namespace
         // Start dan Select di bawah.
         const TInt ssW = MaxI(w / 6, 50);
         const TInt ssH = MaxI(h / 8, 24);
-        const TInt ssY = aSize.iHeight - 6 - ssH - 14;
+        TInt ssY;
+
+        if (compact)
+        {
+            // Layar lanskap: status di tengah, di antara D-pad dan A/B.
+            gStatusX = padX + 3 * d + 14;
+            gStatusY1 = top + sh + 28;
+            gStatusY2 = top + sh + 48;
+            ssY = aSize.iHeight - 6 - ssH;
+        }
+        else
+        {
+            gStatusX = 6;
+            gStatusY1 = aSize.iHeight - 6;
+            gStatusY2 = aSize.iHeight - 24;
+            ssY = aSize.iHeight - 6 - ssH - 36;
+        }
         // Jangan menimpa D-pad: geser ke kanan jika perlu.
         const TInt minX = padX + 3 * d + 8;
         TInt selX = MaxI((w / 2) - ssW - 6, minX);
@@ -392,6 +416,11 @@ void NgbaScreenViewSetStatus(const TDesC& aText)
     gStatus.Copy(aText.Left(gStatus.MaxLength()));
 }
 
+void NgbaScreenViewSetStatus2(const TDesC& aText)
+{
+    gStatus2.Copy(aText.Left(gStatus2.MaxLength()));
+}
+
 TRect NgbaScreenViewGameRect(const TSize& aSize)
 {
     return ComputeGameRect(aSize);
@@ -475,16 +504,24 @@ void NgbaScreenViewDraw(
     }
 
     // Tombol sentuh + status.
+    gStatusX = 6;
+    gStatusY1 = size.iHeight - 6;
+    gStatusY2 = size.iHeight - 24;
+
     DrawControls(aGc, size, aFont, aPressedMask);
 
-    if (aFont != NULL && gStatus.Length() > 0)
+    if (aFont != NULL)
     {
         aGc.UseFont(aFont);
         aGc.SetPenColor(TRgb(0xA0, 0xA8, 0xC0));
-        aGc.DrawText(
-            gStatus,
-            TPoint(6, size.iHeight - 6)
-        );
+        aGc.SetBrushStyle(CGraphicsContext::ENullBrush);
+
+        if (gStatus.Length() > 0)
+            aGc.DrawText(gStatus, TPoint(gStatusX, gStatusY1));
+
+        if (gStatus2.Length() > 0)
+            aGc.DrawText(gStatus2, TPoint(gStatusX, gStatusY2));
+
         aGc.DiscardFont();
     }
 }

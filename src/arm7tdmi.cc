@@ -44,7 +44,7 @@ namespace
         TUint32 spsr_abt;
         TUint32 spsr_und;
         TUint16 intrWaitMask;
-        TBool irqTrampolineActive;
+        TInt irqTrampolineDepth;
     };
 
     TCpuBankState gBank;
@@ -607,7 +607,7 @@ namespace
         gBank.r13_svc = 0x03007FE0u;
         gBank.r14_svc = 0;
         gBank.intrWaitMask = 0;
-        gBank.irqTrampolineActive = EFalse;
+        gBank.irqTrampolineDepth = 0;
 
         cpu.cpsr = 0x0000001Fu; // System mode, IRQ/FIQ aktif (kondisi setelah BIOS)
         cpu.r[13] = 0x03007F00u;
@@ -1495,6 +1495,26 @@ namespace
         case 0x1Fu:
             return ExecuteBiosMidiKey2Freq(cpu);
 
+        // SoundDriver*/MultiBoot/HardReset/CustomHalt dsb. Audio belum
+        // diemulasikan, jadi panggilan ini dianggap berhasil tanpa efek.
+        case 0x1Au:
+        case 0x1Bu:
+        case 0x1Cu:
+        case 0x1Du:
+        case 0x1Eu:
+        case 0x20u:
+        case 0x21u:
+        case 0x22u:
+        case 0x23u:
+        case 0x24u:
+        case 0x28u:
+        case 0x29u:
+        case 0x2Au:
+            return ENgbaCpuOk;
+
+        case 0x27u:
+            return ExecuteBiosHalt(cpu);
+
         default:
             return ENgbaCpuUnsupported;
         }
@@ -1936,8 +1956,10 @@ namespace
     {
         const TUint32 condition = instruction >> 28;
 
+        // Kondisi 0xF (NV) pada ARM7TDMI: instruksi tidak pernah
+        // dieksekusi, jadi diperlakukan sebagai NOP.
         if (condition == 0xFu)
-            return ENgbaCpuUnsupported;
+            return ENgbaCpuOk;
 
         if (!ConditionPassed(cpu.cpsr, condition))
             return ENgbaCpuOk;
@@ -3043,7 +3065,7 @@ namespace
 
         cpu.r[0] = 0x04000000u;
         cpu.r[14] = KHleIrqReturnAddress;
-        gBank.irqTrampolineActive = ETrue;
+        ++gBank.irqTrampolineDepth;
 
         if (isrHandler & 1u)
         {
@@ -3094,7 +3116,7 @@ void NgbaCpuReset(TNgbaCpuState& cpu)
     gBank.spsr_abt = 0x00000010u;
     gBank.spsr_und = 0x00000010u;
     gBank.intrWaitMask = 0;
-    gBank.irqTrampolineActive = EFalse;
+    gBank.irqTrampolineDepth = 0;
 
     cpu.r[15] = KRomBase;
     cpu.r[13] = 0x03007F00u;
@@ -3147,7 +3169,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
     // Kembalian HLE BIOS IRQ: pop {r0-r3, r12, lr} dan subs pc, lr, #4.
     if (!cpu.thumb &&
         address == KHleIrqReturnAddress &&
-        gBank.irqTrampolineActive)
+        gBank.irqTrampolineDepth > 0)
     {
         cpu.r[0] = NgbaMemoryRead32(cpu.r[13] + 0u);
         cpu.r[1] = NgbaMemoryRead32(cpu.r[13] + 4u);
@@ -3157,7 +3179,8 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
         cpu.r[14] = NgbaMemoryRead32(cpu.r[13] + 20u);
         cpu.r[13] += 24u;
 
-        gBank.irqTrampolineActive = EFalse;
+        if (gBank.irqTrampolineDepth > 0)
+            --gBank.irqTrampolineDepth;
 
         const TUint32 returnAddress = cpu.r[14] - 4u;
         const TUint32 restoredCpsr = GetCurrentSpsr(cpu);
@@ -3190,7 +3213,7 @@ TInt NgbaCpuStep(TNgbaCpuState& cpu)
 
             cpu.r[0] = 0x04000000u;
             cpu.r[14] = KHleIrqReturnAddress;
-            gBank.irqTrampolineActive = ETrue;
+            ++gBank.irqTrampolineDepth;
 
             if (isrHandler & 1u)
             {
