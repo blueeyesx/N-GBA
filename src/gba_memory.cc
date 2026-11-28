@@ -1020,32 +1020,34 @@ namespace
         if (aAddress >= KPaletteBase &&
             aAddress < KPaletteBase + 0x01000000u)
         {
-            // GBA PALRAM tidak mendukung byte write biasa:
-            // STRB mengisi kedua byte pada halfword yang sama.
-            const TUint32 offset =
-                (aAddress - KPaletteBase) & ~1u;
-            const TUint32 mapped = offset & (KPaletteSize - 1);
-            gPalette[mapped] = aValue;
-            gPalette[(mapped + 1u) & (KPaletteSize - 1)] = aValue;
+            WriteArray(
+                gPalette,
+                KPaletteSize,
+                aAddress - KPaletteBase,
+                aValue
+            );
             return;
         }
 
         if (aAddress >= KVramBase &&
             aAddress < KVramBase + 0x01000000u)
         {
-            // Byte write ke VRAM juga mereplikasi nilai ke kedua byte
-            // halfword; tanpa ini tile/map hasil DMA/CPU dapat rusak.
             const TUint32 offset =
-                MapVramOffset((aAddress - KVramBase) & ~1u);
+                MapVramOffset(aAddress - KVramBase);
+
             gVram[offset] = aValue;
-            gVram[MapVramOffset(offset + 1u)] = aValue;
             return;
         }
 
         if (aAddress >= KOamBase &&
             aAddress < KOamBase + 0x01000000u)
         {
-            // OAM tidak menerima byte write pada hardware GBA.
+            WriteArray(
+                gOam,
+                KOamSize,
+                aAddress - KOamBase,
+                aValue
+            );
             return;
         }
 
