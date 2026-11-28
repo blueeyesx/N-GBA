@@ -231,27 +231,38 @@ jobs:
           path = pathlib.Path(sys.argv[1])
           content = path.read_text(encoding="utf-8")
 
-          patch = """#ifndef memcmp
-          #define memcmp(a, b, n) \\
-              Mem::Compare(reinterpret_cast<const TUint8*>(a), static_cast<TInt>(n), \\
-                           reinterpret_cast<const TUint8*>(b), static_cast<TInt>(n))
+          patch = """static inline int ngba_memcmp(const void* a, const void* b, unsigned int n)
+          {
+              const unsigned char* p1 = static_cast<const unsigned char*>(a);
+              const unsigned char* p2 = static_cast<const unsigned char*>(b);
+              for (unsigned int i = 0; i < n; ++i)
+              {
+                  if (p1[i] != p2[i])
+                  {
+                      return static_cast<int>(p1[i]) - static_cast<int>(p2[i]);
+                  }
+              }
+              return 0;
+          }
+          #ifndef memcmp
+          #define memcmp ngba_memcmp
           #endif
 
           """
 
-          if "Mem::Compare" not in content:
+          if "ngba_memcmp" not in content:
               marker = '#include <e32std.h>\n'
               if marker in content:
                   content = content.replace(marker, marker + patch, 1)
               else:
-                  content = '#include <e32std.h>\n' + patch + content
+                  content = patch + content
               path.write_text(content, encoding="utf-8")
 
-          print("Patched memcmp() in gba_memory.cc.")
+          print("Patched memcmp() with inline ngba_memcmp in gba_memory.cc.")
           PY
 
-          grep -q 'Mem::Compare' "$PROJECT/src/gba_memory.cc"
-          echo "memcmp compatibility patch verified."
+          grep -q 'ngba_memcmp' "$PROJECT/src/gba_memory.cc"
+          echo "memcmp inline patch verified."
 
       - name: Configure CMake
         shell: bash
