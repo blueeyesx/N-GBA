@@ -252,6 +252,13 @@ jobs:
               Symbian::FontStore
               Symbian::FileServer
           )
+
+          target_compile_options(
+              ngba_native_gui
+              PRIVATE
+              -O2
+              -fno-strict-aliasing
+          )
           CMAKE
 
           cat "$PROJECT/CMakeLists.txt"
